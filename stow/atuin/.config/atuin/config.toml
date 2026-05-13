@@ -1,0 +1,17 @@
+[sync]
+records = false
+
+[db]
+path = "~/.local/share/atuin/history.db"
+
+[stats]
+common_subcommands = ["cargo", "go", "git", "npm", "yarn", "pnpm", "docker", "kubectl"]
+
+[search]
+filter_mode = "host"
+filter_mode_shell_up_key_binding = "session"
+style = "compact"
+show_preview = true
+
+[daemon]
+enabled = false
