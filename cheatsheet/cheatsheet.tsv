@@ -1,0 +1,53 @@
+context	key	action	tier
+nvim	:w	Save file	day1
+nvim	:q	Quit	day1
+nvim	:wq	Save and quit	day1
+nvim	i	Enter insert mode	day1
+nvim	Esc	Exit insert mode	day1
+nvim	<leader>ff	Find files (telescope)	day1
+nvim	<leader>fg	Live grep (telescope)	day1
+nvim	<leader>e	Toggle file explorer	day1
+nvim	gd	Go to definition	week1
+nvim	gr	Find references	week1
+nvim	K	Hover documentation	week1
+nvim	<leader>ca	Code action	week1
+nvim	<leader>rn	Rename symbol	week1
+nvim	gcc	Toggle comment line	week1
+nvim	ciw	Change inner word	week1
+nvim	vi{	Select inside braces	week1
+nvim	va{	Select around braces	week1
+nvim	<C-d>	Scroll down + center	week1
+nvim	<C-u>	Scroll up + center	week1
+nvim	<leader>gg	Open lazygit	week1
+nvim	<leader>aa	Avante AI chat	month1
+nvim	<leader>ae	Avante AI edit	month1
+nvim	qa	Start recording macro (reg a)	month1
+nvim	q	Stop recording macro	month1
+nvim	@a	Play macro (reg a)	month1
+nvim	<leader>sr	Search & replace (Spectre)	month1
+tmux	C-a |	Vertical split	day1
+tmux	C-a -	Horizontal split	day1
+tmux	C-h/j/k/l	Navigate panes	day1
+tmux	C-a d	Detach session	day1
+tmux	C-a z	Zoom pane toggle	week1
+tmux	C-a T	Sesh session picker	week1
+tmux	C-a [	Enter copy mode	week1
+tmux	C-a !	Break pane to window	month1
+tmux	C-a r	Reload config	month1
+shell	Ctrl-R	Atuin history search	day1
+shell	Ctrl-T	fzf file insert	day1
+shell	Alt-C	fzf cd into directory	week1
+shell	z <dir>	Zoxide smart cd	day1
+shell	lg	lazygit	day1
+shell	y	yazi file manager	week1
+shell	v	nvim	day1
+shell	fuck	Correct last command	week1
+lazygit	space	Stage/unstage file	week1
+lazygit	c	Commit	week1
+lazygit	P	Push	week1
+lazygit	p	Pull	week1
+lazygit	?	Help	week1
+yazi	o	Open file	week1
+yazi	.	Toggle hidden	week1
+yazi	q	Quit	week1
+yazi	/	Search	week1
