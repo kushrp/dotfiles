@@ -16,6 +16,7 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 # ─── Detect Environment ──────────────────────────────────────────────────────
 OS="unknown"
 HEADLESS=false
+DRY_RUN=false
 
 case "$(uname -s)" in
   Darwin) OS="macos" ;;
@@ -23,9 +24,12 @@ case "$(uname -s)" in
   *)      error "Unsupported OS: $(uname -s)" ;;
 esac
 
-if [[ "${1:-}" == "--headless" ]]; then
-  HEADLESS=true
-fi
+for arg in "$@"; do
+  case "$arg" in
+    --headless) HEADLESS=true ;;
+    --dry-run)  DRY_RUN=true ;;
+  esac
+done
 
 if [[ "$OS" == "linux" ]] && [[ -z "${DISPLAY:-}" ]] && [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
   HEADLESS=true
@@ -34,7 +38,7 @@ fi
 DOTFILES_DIR="$HOME/.dotfiles"
 BACKUP_DIR="$HOME/.dotfiles-backup/$(date +%Y%m%d-%H%M%S)"
 
-info "OS: $OS | Headless: $HEADLESS"
+info "OS: $OS | Headless: $HEADLESS | Dry run: $DRY_RUN"
 info "Dotfiles: $DOTFILES_DIR"
 
 # ─── Clone or Update Repo ────────────────────────────────────────────────────
@@ -273,6 +277,68 @@ main() {
   echo -e "${PURPLE}║     Portable Dotfiles Installer          ║${NC}"
   echo -e "${PURPLE}╚══════════════════════════════════════════╝${NC}"
   echo ""
+
+  if [[ "$DRY_RUN" == true ]]; then
+    info "── DRY RUN: showing what would happen ──"
+    echo ""
+
+    # Report packages
+    if [[ "$OS" == "macos" ]]; then
+      info "Would install Homebrew packages from Brewfile:"
+      grep '^brew\|^cask' Brewfile | sed 's/^/    /'
+    else
+      info "Would install apt packages from packages.txt:"
+      grep -v '^#' packages.txt | grep -v '^$' | sed 's/^/    /'
+    fi
+    echo ""
+
+    # Report stow conflicts
+    info "Checking for stow conflicts..."
+    local packages=(zsh starship tmux nvim git atuin bat btop mise nb lazygit yazi)
+    if [[ "$HEADLESS" == false ]]; then
+      packages+=(ghostty)
+    fi
+
+    local conflict_found=false
+    for pkg in "${packages[@]}"; do
+      if [[ -d "stow/$pkg" ]]; then
+        local conflicts
+        conflicts=$(stow -d stow -t "$HOME" --no "$pkg" 2>&1 | grep "existing target" || true)
+        if [[ -n "$conflicts" ]]; then
+          conflict_found=true
+          warn "Conflicts for $pkg (would backup to $BACKUP_DIR):"
+          echo "$conflicts" | sed 's/^/    /'
+        fi
+      fi
+    done
+    if [[ "$conflict_found" == false ]]; then
+      success "No stow conflicts detected"
+    fi
+    echo ""
+
+    # Report what would be stowed
+    info "Would stow these packages → ~/"
+    for pkg in "${packages[@]}"; do
+      if [[ -d "stow/$pkg" ]]; then
+        echo "    $pkg"
+      fi
+    done
+    echo ""
+
+    # Report post-install
+    info "Post-install steps that would run:"
+    echo "    - Install Nerd Font (if headful + Linux)"
+    echo "    - Install TPM (tmux plugin manager)"
+    echo "    - Bootstrap Neovim plugins (Lazy sync)"
+    echo "    - Download Catppuccin bat theme"
+    echo "    - Install mise runtimes (python 3.12, node 22)"
+    echo "    - Create ~/.local/dotfiles.d/ extensibility dir"
+    echo "    - Symlink scripts to ~/.local/bin/"
+    echo ""
+
+    success "Dry run complete. Run without --dry-run to install."
+    return
+  fi
 
   # 1. Package manager + packages
   if [[ "$OS" == "macos" ]]; then
