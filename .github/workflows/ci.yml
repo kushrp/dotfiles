@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run shellcheck on install.sh
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: '.'
+          additional_files: 'scripts/dotfiles-learn scripts/dotfiles-tips scripts/dotfiles-update'
+
+  dry-run:
+    name: Dry Run (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run install.sh --dry-run
+        run: |
+          # Point DOTFILES_DIR at the checkout so it skips clone
+          export DOTFILES_DIR="$GITHUB_WORKSPACE"
+          # Patch install.sh to skip the clone step for CI
+          sed -i.bak 's|git clone.*|:|' install.sh
+          sed -i.bak 's|git -C.*pull.*|:|' install.sh
+          bash install.sh --dry-run
+
+  install-ubuntu:
+    name: Full Install (Ubuntu, headless)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stow
+        run: sudo apt-get update && sudo apt-get install -y stow
+      - name: Run stow for all packages
+        run: |
+          for pkg in stow/*/; do
+            pkg_name=$(basename "$pkg")
+            stow -d stow -t "$HOME" --no-folding "$pkg_name"
+          done
+      - name: Verify symlinks exist
+        run: |
+          test -L "$HOME/.zshrc"
+          test -L "$HOME/.tmux.conf"
+          test -L "$HOME/.config/nvim/init.lua"
+          test -L "$HOME/.config/starship.toml"
+          test -L "$HOME/.config/atuin/config.toml"
+          test -L "$HOME/.gitconfig"
+      - name: Verify scripts are executable
+        run: |
+          test -x scripts/dotfiles-learn
+          test -x scripts/dotfiles-tips
+          test -x scripts/dotfiles-update
+
+  structure:
+    name: Verify Repo Structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check required files exist
+        run: |
+          files=(
+            install.sh
+            Brewfile
+            packages.txt
+            stow/zsh/.zshrc
+            stow/starship/.config/starship.toml
+            stow/tmux/.tmux.conf
+            stow/nvim/.config/nvim/init.lua
+            stow/nvim/.config/nvim/lua/config/lazy.lua
+            stow/nvim/.config/nvim/lua/config/options.lua
+            stow/nvim/.config/nvim/lua/config/keymaps.lua
+            stow/nvim/.config/nvim/lua/plugins/catppuccin.lua
+            stow/ghostty/.config/ghostty/config
+            stow/yazi/.config/yazi/yazi.toml
+            stow/lazygit/.config/lazygit/config.yml
+            stow/atuin/.config/atuin/config.toml
+            stow/git/.gitconfig
+            stow/bat/.config/bat/config
+            stow/btop/.config/btop/btop.conf
+            stow/mise/.config/mise/config.toml
+            scripts/dotfiles-learn
+            scripts/dotfiles-tips
+            scripts/dotfiles-update
+            tips/tips.yaml
+            cheatsheet/cheatsheet.tsv
+            docs/DAY-1.md
+            docs/WEEK-1.md
+            docs/MONTH-1.md
+          )
+          for f in "${files[@]}"; do
+            if [[ ! -f "$f" ]]; then
+              echo "MISSING: $f"
+              exit 1
+            fi
+          done
+          echo "All required files present!"
