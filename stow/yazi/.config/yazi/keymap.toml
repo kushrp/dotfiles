@@ -1,0 +1,6 @@
+[manager]
+keymap = [
+  { on = ["<Esc>"], run = "escape", desc = "Exit visual mode / clear" },
+  { on = ["q"], run = "quit", desc = "Quit" },
+  { on = ["<C-c>"], run = "close", desc = "Close tab" },
+]
