@@ -1,0 +1,20 @@
+# Core (some installed via other methods — see install.sh)
+stow
+zsh
+tmux
+neovim
+fzf
+ripgrep
+fd-find
+mosh
+direnv
+curl
+git
+build-essential
+unzip
+
+# These are installed via cargo/go/pip/direct binary in install.sh:
+# starship, atuin, yazi, lazygit, bat, eza, dust, btop, zoxide,
+# delta, difftastic, ast-grep, just, watchexec, hyperfine,
+# lazydocker, mise, glow, freeze, vhs, procs, pueue, fd, llm,
+# thefuck, xxh, nap, nb, bandwhich
