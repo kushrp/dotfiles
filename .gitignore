@@ -1,0 +1,5 @@
+.DS_Store
+*.swp
+*.swo
+*~
+.local/dotfiles.d/secrets.zsh
