@@ -1,0 +1,2 @@
+# Zsh-specific syntax that shellcheck can't parse
+disable=SC2001

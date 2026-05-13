@@ -151,7 +151,8 @@ backup_conflicts() {
   local had_conflicts=false
 
   for pkg_dir in stow/*/; do
-    local pkg=$(basename "$pkg_dir")
+    local pkg
+    pkg=$(basename "$pkg_dir")
     # Dry-run stow to detect conflicts
     if ! stow -d stow -t "$HOME" --no "$pkg" 2>/dev/null; then
       had_conflicts=true
@@ -228,7 +229,8 @@ setup_nvim() {
 
 setup_bat_themes() {
   if command -v bat &>/dev/null; then
-    local theme_dir="$(bat --config-dir)/themes"
+    local theme_dir
+    theme_dir="$(bat --config-dir)/themes"
     if [[ ! -d "$theme_dir/catppuccin" ]]; then
       mkdir -p "$theme_dir"
       curl -fLo "$theme_dir/Catppuccin Mocha.tmTheme" \

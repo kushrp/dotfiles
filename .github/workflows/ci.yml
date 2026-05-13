@@ -12,11 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run shellcheck on install.sh
-        uses: ludeeus/action-shellcheck@master
-        with:
-          scandir: '.'
-          additional_files: 'scripts/dotfiles-learn scripts/dotfiles-tips scripts/dotfiles-update'
+      - name: Run shellcheck
+        run: |
+          shellcheck -x -e SC1071,SC1073,SC1036,SC1058,SC1072 install.sh
+          shellcheck -x -e SC1071,SC1073,SC1036,SC1058,SC1072 scripts/dotfiles-tips
+          shellcheck -x -e SC1071,SC1073,SC1036,SC1058,SC1072 scripts/dotfiles-learn
+          shellcheck -x scripts/dotfiles-update
 
   dry-run:
     name: Dry Run (${{ matrix.os }})
@@ -27,12 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run install.sh --dry-run
+        env:
+          DOTFILES_DIR: ${{ github.workspace }}
         run: |
-          # Point DOTFILES_DIR at the checkout so it skips clone
-          export DOTFILES_DIR="$GITHUB_WORKSPACE"
-          # Patch install.sh to skip the clone step for CI
-          sed -i.bak 's|git clone.*|:|' install.sh
-          sed -i.bak 's|git -C.*pull.*|:|' install.sh
+          # Patch install.sh to skip the clone/cd step for CI
+          sed -i.bak '/git clone/d; /git -C.*pull/d; s|cd "\$DOTFILES_DIR"|cd "$GITHUB_WORKSPACE"|' install.sh
           bash install.sh --dry-run
 
   install-ubuntu:

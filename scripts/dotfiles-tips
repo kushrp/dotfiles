@@ -40,7 +40,7 @@ done
 
 # Reset if all seen
 if [[ ${#UNSEEN[@]} -eq 0 ]]; then
-  > "$SEEN_FILE"
+  true > "$SEEN_FILE"
   UNSEEN=("${ALL_TIPS[@]}")
 fi
 
