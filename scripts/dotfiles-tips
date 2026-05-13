@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# dotfiles-tips — show one random tip per shell session, never repeats until all shown
+set -euo pipefail
+
+TIPS_FILE="${DOTFILES_DIR:-$HOME/.dotfiles}/tips/tips.yaml"
+SEEN_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/dotfiles/tips-seen"
+STATE_DIR="$(dirname "$SEEN_FILE")"
+
+mkdir -p "$STATE_DIR"
+
+if [[ ! -f "$TIPS_FILE" ]]; then
+  exit 0
+fi
+
+# Parse tips from YAML (simple format: "- tip: ..." lines)
+mapfile -t ALL_TIPS < <(grep '^- tip:' "$TIPS_FILE" | sed 's/^- tip: //')
+
+if [[ ${#ALL_TIPS[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+# Load seen tips
+touch "$SEEN_FILE"
+mapfile -t SEEN < "$SEEN_FILE"
+
+# Find unseen tips
+UNSEEN=()
+for tip in "${ALL_TIPS[@]}"; do
+  found=false
+  for seen in "${SEEN[@]}"; do
+    if [[ "$tip" == "$seen" ]]; then
+      found=true
+      break
+    fi
+  done
+  if [[ "$found" == false ]]; then
+    UNSEEN+=("$tip")
+  fi
+done
+
+# Reset if all seen
+if [[ ${#UNSEEN[@]} -eq 0 ]]; then
+  > "$SEEN_FILE"
+  UNSEEN=("${ALL_TIPS[@]}")
+fi
+
+# Pick random tip
+INDEX=$((RANDOM % ${#UNSEEN[@]}))
+TIP="${UNSEEN[$INDEX]}"
+
+# Mark as seen
+echo "$TIP" >> "$SEEN_FILE"
+
+# Display
+echo ""
+echo -e "\033[0;35m💡 Tip:\033[0m $TIP"
+echo ""

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# dotfiles-update — pull latest dotfiles and re-stow
+set -euo pipefail
+
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+
+info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+success() { echo -e "${GREEN}[OK]${NC} $1"; }
+
+cd "$DOTFILES_DIR"
+
+info "Pulling latest..."
+git pull --rebase --quiet
+
+info "Re-stowing all packages..."
+for pkg_dir in stow/*/; do
+  pkg=$(basename "$pkg_dir")
+  stow -d stow -t "$HOME" --restow "$pkg" 2>/dev/null
+done
+
+success "Dotfiles updated!"
+echo ""
+echo "  Restart your shell to pick up changes: exec zsh"

@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# dotfiles-learn — progressive learning launcher
+set -euo pipefail
+
+PURPLE='\033[0;35m'
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+PROGRESS_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/dotfiles/learn-progress"
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+
+mkdir -p "$(dirname "$PROGRESS_FILE")"
+touch "$PROGRESS_FILE"
+
+show_menu() {
+  echo ""
+  echo -e "${PURPLE}╔══════════════════════════════════════════╗${NC}"
+  echo -e "${PURPLE}║        Dotfiles Learning System          ║${NC}"
+  echo -e "${PURPLE}╚══════════════════════════════════════════╝${NC}"
+  echo ""
+  echo -e "  ${BLUE}Guides:${NC}"
+  echo "  [1] Day 1   — Survive (open, save, quit, navigate)"
+  echo "  [2] Week 1  — Flow (text objects, telescope, git)"
+  echo "  [3] Month 1 — Power (macros, AI, refactoring)"
+  echo ""
+  echo -e "  ${BLUE}Practice:${NC}"
+  echo "  [4] Vim motions drill (vim-be-good)"
+  echo "  [5] Tmux workflow drill"
+  echo "  [6] Cheatsheet (searchable)"
+  echo ""
+  echo -e "  ${BLUE}Progress:${NC}"
+  echo "  [7] View my progress"
+  echo ""
+  echo -e "  [q] Quit"
+  echo ""
+}
+
+view_guide() {
+  local guide="$1"
+  if [[ -f "$DOTFILES_DIR/docs/$guide" ]]; then
+    glow "$DOTFILES_DIR/docs/$guide" 2>/dev/null || cat "$DOTFILES_DIR/docs/$guide"
+    grep -qxF "$guide" "$PROGRESS_FILE" || echo "$guide" >> "$PROGRESS_FILE"
+  else
+    echo "Guide not found: $guide"
+  fi
+}
+
+vim_drill() {
+  if command -v nvim &>/dev/null; then
+    echo -e "${BLUE}Launching vim-be-good...${NC}"
+    nvim -c "VimBeGood"
+  else
+    echo "Neovim not installed."
+  fi
+}
+
+tmux_drill() {
+  echo ""
+  echo -e "${BLUE}Tmux Workflow Drill:${NC}"
+  echo ""
+  echo "  Practice these in order:"
+  echo "  1. C-a |     — vertical split"
+  echo "  2. C-a -     — horizontal split"
+  echo "  3. C-h/j/k/l — navigate panes"
+  echo "  4. C-a T     — sesh session picker"
+  echo "  5. C-a d     — detach"
+  echo "  6. C-a [     — enter copy mode (vi keys)"
+  echo ""
+  echo -e "  ${GREEN}Try each one now! Press Enter when done.${NC}"
+  read -r
+  grep -qxF "tmux-drill" "$PROGRESS_FILE" || echo "tmux-drill" >> "$PROGRESS_FILE"
+}
+
+show_cheatsheet() {
+  local cheatsheet="$DOTFILES_DIR/cheatsheet/cheatsheet.tsv"
+  if [[ -f "$cheatsheet" ]]; then
+    local filter=""
+    if [[ -n "${TMUX:-}" ]]; then
+      filter="tmux"
+    fi
+
+    if [[ -n "$filter" ]]; then
+      column -t -s $'\t' "$cheatsheet" | fzf --query="$filter" --header="Cheatsheet (filtered: $filter)"
+    else
+      column -t -s $'\t' "$cheatsheet" | fzf --header="Cheatsheet (Ctrl-/ in shell)"
+    fi
+  else
+    echo "Cheatsheet not found."
+  fi
+}
+
+show_progress() {
+  echo ""
+  echo -e "${GREEN}Your Progress:${NC}"
+  echo ""
+  local total=0
+  local done=0
+
+  for item in "DAY-1.md" "WEEK-1.md" "MONTH-1.md" "vim-drill" "tmux-drill"; do
+    total=$((total + 1))
+    if grep -qxF "$item" "$PROGRESS_FILE" 2>/dev/null; then
+      echo -e "  ${GREEN}✓${NC} $item"
+      done=$((done + 1))
+    else
+      echo -e "  ○ $item"
+    fi
+  done
+
+  echo ""
+  echo -e "  ${BLUE}Progress: $done/$total${NC}"
+  echo ""
+}
+
+# Main loop
+while true; do
+  show_menu
+  read -rp "  Choose: " choice
+  case "$choice" in
+    1) view_guide "DAY-1.md" ;;
+    2) view_guide "WEEK-1.md" ;;
+    3) view_guide "MONTH-1.md" ;;
+    4) vim_drill ;;
+    5) tmux_drill ;;
+    6) show_cheatsheet ;;
+    7) show_progress ;;
+    q|Q) echo ""; exit 0 ;;
+    *) echo "Invalid choice." ;;
+  esac
+done
