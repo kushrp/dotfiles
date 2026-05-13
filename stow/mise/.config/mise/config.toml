@@ -1,0 +1,6 @@
+[tools]
+python = "3.12"
+node = "22"
+
+[settings]
+experimental = true

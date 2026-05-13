@@ -1,0 +1,6 @@
+export NB_DIR="$HOME/.nb"
+export NB_EDITOR="nvim"
+export NB_DEFAULT_EXTENSION="md"
+export NB_SYNTAX_THEME="Catppuccin Mocha"
+export NB_COLOR_PRIMARY=183
+export NB_COLOR_SECONDARY=111
