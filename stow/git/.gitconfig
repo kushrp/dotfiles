@@ -1,0 +1,63 @@
+[user]
+    # Set per-machine in ~/.local/dotfiles.d/git.zsh or via git config --global
+    # name =
+    # email =
+
+[core]
+    pager = delta
+    editor = nvim
+    excludesfile = ~/.gitignore_global
+    autocrlf = input
+
+[init]
+    defaultBranch = main
+
+[pull]
+    rebase = true
+
+[push]
+    autoSetupRemote = true
+    default = current
+
+[fetch]
+    prune = true
+
+[merge]
+    conflictstyle = zdiff3
+
+[diff]
+    algorithm = histogram
+    colorMoved = default
+
+[interactive]
+    diffFilter = delta --color-only
+
+[delta]
+    navigate = true
+    side-by-side = true
+    line-numbers = true
+    syntax-theme = Catppuccin Mocha
+    dark = true
+    hyperlinks = true
+
+[delta "interactive"]
+    keep-plus-minus-markers = false
+
+[rerere]
+    enabled = true
+
+[alias]
+    s = status -sb
+    l = log --oneline --graph --decorate -20
+    la = log --oneline --graph --decorate --all
+    d = diff
+    ds = diff --staged
+    co = checkout
+    cb = checkout -b
+    cm = commit -m
+    ca = commit --amend
+    p = push
+    pf = push --force-with-lease
+    pl = pull
+    undo = reset --soft HEAD~1
+    wip = !git add -A && git commit -m 'wip: checkpoint'
