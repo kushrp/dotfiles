@@ -161,17 +161,17 @@ backup_conflicts() {
 
       # Portable conflict extraction: handles both old ("existing target is not owned by stow: PATH")
       # and new ("over existing target PATH since ...") stow output formats. Uses sed (BSD/GNU compat).
-      stow -d stow -t "$HOME" --no "$pkg" 2>&1 \
-        | sed -nE -e 's/.*existing target is not owned by stow: (.*)$/\1/p' \
-                  -e 's/.*over existing target (.+) since.*/\1/p' \
-        | while read -r file; do
+      # `|| true` swallows the expected non-zero exit from `stow --no` so pipefail+set-e don't bail.
+      while read -r file; do
         local src="$HOME/$file"
         if [[ -e "$src" ]] && [[ ! -L "$src" ]]; then
           mkdir -p "$BACKUP_DIR/$(dirname "$file")"
           mv "$src" "$BACKUP_DIR/$file"
           info "  Backed up: $file"
         fi
-      done
+      done < <(stow -d stow -t "$HOME" --no "$pkg" 2>&1 \
+                 | sed -nE -e 's/.*existing target is not owned by stow: (.*)$/\1/p' \
+                           -e 's/.*over existing target (.+) since.*/\1/p' || true)
     fi
   done
 
