@@ -347,9 +347,9 @@ main() {
     install_homebrew
     info "Installing packages from Brewfile..."
     if [[ "$HEADLESS" == true ]]; then
-      brew bundle --file=Brewfile --no-lock 2>/dev/null | grep -v "^Skipping"
+      brew bundle --file=Brewfile 2>/dev/null | grep -v "^Skipping"
     else
-      brew bundle --file=Brewfile --no-lock
+      brew bundle --file=Brewfile
     fi
     success "Brew packages installed"
   else
