@@ -48,7 +48,7 @@ brew "glow"
 
 # Visual & Recording
 brew "vhs"
-brew "freeze"
+# freeze: removed from homebrew-core. Install via `brew install charmbracelet/tap/freeze` if desired.
 
 # Knowledge & Notes
 brew "nb"
