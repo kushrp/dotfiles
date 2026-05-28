@@ -126,8 +126,10 @@
 
 [commit]
 
-	# https://help.github.com/articles/signing-commits-using-gpg/
-	gpgsign = true
+	# Don't require GPG signing by default — most machines won't have
+	# a key configured. Override per-repo with `git config commit.gpgsign true`
+	# or globally in ~/.extra after setting up GPG.
+	gpgsign = false
 
 [diff]
 
@@ -181,3 +183,9 @@
 [init]
 
 	defaultBranch = main
+
+[include]
+
+	# Per-machine overrides. Created by ~/.extra (gitignored) so identity
+	# never lands in this committed file.
+	path = ~/.gitconfig.local

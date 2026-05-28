@@ -1,0 +1,16 @@
+git
+git-lfs
+curl
+wget
+zsh
+tmux
+vim
+tree
+jq
+ripgrep
+fd
+fzf
+bat
+htop
+gnupg
+base-devel

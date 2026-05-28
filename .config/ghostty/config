@@ -1,0 +1,40 @@
+# Ghostty config. Reload in-app with cmd+shift+, or restart Ghostty.
+# Full reference: https://ghostty.org/docs/config/reference
+
+# --- Appearance --------------------------------------------------------------
+theme = Solarized Dark Patched
+font-family = JetBrains Mono
+font-size = 14
+window-padding-x = 12
+window-padding-y = 12
+window-padding-balance = true
+background-opacity = 0.97
+cursor-style = block
+cursor-style-blink = false
+
+# --- macOS chrome ------------------------------------------------------------
+macos-titlebar-style = tabs
+macos-option-as-alt = true
+window-save-state = always
+confirm-close-surface = false
+quit-after-last-window-closed = true
+
+# --- Shell integration -------------------------------------------------------
+# `detect` lets Ghostty figure out zsh vs bash; features add cursor hints,
+# sudo password prompts in the terminal, and dynamic window titles.
+shell-integration = detect
+shell-integration-features = cursor,sudo,title
+
+# --- Clipboard / mouse -------------------------------------------------------
+copy-on-select = clipboard
+mouse-hide-while-typing = true
+clipboard-trim-trailing-spaces = true
+
+# --- Scrollback --------------------------------------------------------------
+scrollback-limit = 100000
+
+# --- Keybinds ----------------------------------------------------------------
+# cmd+t = new tab, cmd+w = close, cmd+shift+[ / ] = prev/next tab. These are
+# Ghostty defaults; redeclared here as documentation. Customize freely.
+# keybind = cmd+d=new_split:right
+# keybind = cmd+shift+d=new_split:down

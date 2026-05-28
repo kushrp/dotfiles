@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Template for ~/.extra. Copy to ~/.extra and fill in. ~/.extra is gitignored
+# and sourced last by .bash_profile / .zshrc so it can override anything else.
+#
+#   cp ~/Documents/dotfiles/.extra.example ~/.extra
+#   chmod 600 ~/.extra
+#
+# Anything here is exposed to every interactive shell. Treat it like a secret
+# file: do not commit, do not paste into chat, rotate if leaked.
+
+# --- Git identity -----------------------------------------------------------
+# Written to ~/.gitconfig.local (which the committed .gitconfig [include]s),
+# rather than `git config --global`, so we never mutate the symlinked file.
+GIT_AUTHOR_NAME="Your Name"
+GIT_AUTHOR_EMAIL="you@example.com"
+GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+
+_gitconfig_local="$HOME/.gitconfig.local"
+if [ ! -f "$_gitconfig_local" ] \
+   || ! grep -q "email = $GIT_AUTHOR_EMAIL" "$_gitconfig_local" 2>/dev/null; then
+  cat > "$_gitconfig_local" <<EOF
+[user]
+	name = $GIT_AUTHOR_NAME
+	email = $GIT_AUTHOR_EMAIL
+EOF
+  chmod 600 "$_gitconfig_local"
+fi
+unset _gitconfig_local
+
+# --- Tokens ------------------------------------------------------------------
+# Prefer pulling from `gh auth token` (keychain) when available, so rotating
+# in `gh` automatically picks up here.
+if command -v gh >/dev/null 2>&1; then
+  _gh_token="$(gh auth token 2>/dev/null)"
+  if [ -n "$_gh_token" ]; then
+    export GITHUB_AUTH_TOKEN="$_gh_token"
+    export GH_TOKEN="$_gh_token"
+  fi
+  unset _gh_token
+fi
+# export GITHUB_AUTH_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+# export ANTHROPIC_API_KEY="sk-ant-..."
+# export OPENAI_API_KEY="sk-..."
+
+# --- Machine-local overrides -------------------------------------------------
+# e.g. add a path that only exists on this laptop:
+# export PATH="$HOME/work/some-tool/bin:$PATH"

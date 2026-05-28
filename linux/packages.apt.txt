@@ -1,0 +1,16 @@
+git
+git-lfs
+curl
+wget
+zsh
+tmux
+vim
+tree
+jq
+ripgrep
+fd-find
+fzf
+bat
+htop
+gnupg
+build-essential
