@@ -274,6 +274,10 @@ bindkey '^X^A' _ai_suggest_widget
 #   ccls                  list this repo's agent worktrees
 #   ccrm <name>           remove a finished worktree + its branch (after landing)
 #   prefix T  (in tmux)   fuzzy-jump between all agent sessions/dirs (sesh)
+# Flags every spawned agent runs with. Worktrees are isolated, so agents run
+# autonomously (--dangerously-skip-permissions) by default — override per call:
+#   CC_FLAGS= cc <name>            (run WITH permission prompts)
+: ${CC_FLAGS:=--dangerously-skip-permissions}
 cc() {
   emulate -L zsh
   local name="$1"; shift
@@ -285,9 +289,9 @@ cc() {
   # claude -w creates the worktree off origin/HEAD and starts the session there.
   # We own the tmux part (Ghostty, not iTerm2), so don't use claude's --tmux.
   if [[ -n "$TMUX" ]]; then
-    tmux new-window -n "$name" -c "$root" "claude --worktree '$name' $*"
+    tmux new-window -n "$name" -c "$root" "claude --worktree '$name' ${CC_FLAGS} $*"
   else
-    tmux new-session -A -s "$repo" -n "$name" -c "$root" "claude --worktree '$name' $*"
+    tmux new-session -A -s "$repo" -n "$name" -c "$root" "claude --worktree '$name' ${CC_FLAGS} $*"
   fi
 }
 ccls() {
@@ -306,6 +310,16 @@ ccrm() {
 }
 # Central agent dashboard (also `prefix A` in tmux): all sessions + live preview.
 alias ccd='cc-dashboard'
+
+# --- Bracketed paste (safe multi-line paste) -------------------------------
+# Guarantees pasted text — multi-line commands, quotes, code — lands as literal
+# text you can edit, instead of executing line-by-line. zsh enables this by
+# default, but re-assert it AFTER plugins load so nothing clobbers the widget.
+# (If a paste ever auto-runs, it's almost always a shell that predates this.)
+if [[ -z "${zle_bracketed_paste:-}" ]]; then
+  zle_bracketed_paste=($'\e[?2004h' $'\e[?2004l')
+fi
+bindkey '^[[200~' bracketed-paste 2>/dev/null
 
 # --- History ---------------------------------------------------------------
 HISTFILE="$HOME/.zsh_history"

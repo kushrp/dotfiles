@@ -30,7 +30,9 @@ $cmd_duration\
 $line_break\
 $character"""
 
-right_format = """$time"""
+# No right_format: a right-aligned prompt (RPROMPT) repaints on every keystroke
+# as the line grows, which flickers in tmux. Command timing lives in
+# $cmd_duration on the left instead; the tmux status bar shows the clock.
 
 palette = "tokyonight"
 
@@ -123,7 +125,7 @@ style = "fg:yellow"
 format = '[ ⏱ $duration ]($style)'
 
 [time]
-disabled = false
+disabled = true   # shown in the tmux status bar instead (no RPROMPT flicker)
 time_format = "%H:%M"
 style = "fg:gray"
 format = '[  $time ]($style)'

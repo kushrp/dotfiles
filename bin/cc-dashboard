@@ -52,5 +52,5 @@ _rows | fzf --ansi --no-sort --delimiter='\t' --with-nth=3.. \
   --bind "ctrl-r:reload($0 --rows)" \
   --bind "ctrl-x:execute-silent(tmux kill-window -t {2})+reload($0 --rows)" \
   --bind "ctrl-g:execute(p=\$(tmux display-message -p -t {2} '#{pane_current_path}'); tmux display-popup -E -d \"\$p\" -w 90% -h 90% lazygit)" \
-  --bind "ctrl-n:execute(name={q}; [ -n \"\$name\" ] && tmux new-window -n \"\$name\" \"claude --worktree '\$name'\")+abort" \
+  --bind "ctrl-n:execute(name={q}; [ -n \"\$name\" ] && tmux new-window -n \"\$name\" \"claude --worktree '\$name' --dangerously-skip-permissions\")+abort" \
   --bind "enter:become(tmux switch-client -t {2} 2>/dev/null || tmux attach -t {2})"

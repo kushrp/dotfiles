@@ -11,8 +11,10 @@ while IFS= read -r s; do
   esac
 done < <(tmux list-windows -a -F '#{@cc_status}' 2>/dev/null)
 
+# Single-width glyphs (◆ waiting / ▸ working / ✓ done) — same as the window
+# tabs; emoji width-counts wrong in tmux status segments. Color carries state.
 out=""
-(( waiting )) && out+="#[fg=#e0af68,bold]⏸${waiting}#[default] "
-(( working )) && out+="#[fg=#7dcfff]🤖${working}#[default] "
-(( done ))    && out+="#[fg=#9ece6a]✅${done}#[default] "
+(( waiting )) && out+="#[fg=#e0af68,bold]◆${waiting}#[default] "
+(( working )) && out+="#[fg=#7dcfff]▸${working}#[default] "
+(( done ))    && out+="#[fg=#9ece6a]✓${done}#[default] "
 printf '%s' "$out"
