@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Battery segment for the tmux status bar (macOS pmset). Colored by level,
+# ⚡ when charging. Prints nothing on desktops or if pmset is unavailable.
+command -v pmset >/dev/null 2>&1 || exit 0
+line="$(pmset -g batt 2>/dev/null)" || exit 0
+pct="$(printf '%s' "$line" | grep -oE '[0-9]+%' | head -1 | tr -d '%')"
+[ -n "$pct" ] || exit 0
+bolt=""; printf '%s' "$line" | grep -q "AC Power" && bolt="⚡"
+if   (( pct >= 60 )); then c="#9ece6a"
+elif (( pct >= 25 )); then c="#e0af68"
+else                       c="#f7768e"; fi
+printf '#[fg=%s]%s%s%%#[default]' "$c" "$bolt" "$pct"
