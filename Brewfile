@@ -6,7 +6,7 @@
 # also runs if it exists.
 
 # --- Taps --------------------------------------------------------------------
-# (none — everything below is in homebrew-core)
+tap "withgraphite/tap"     # the `gt` Graphite CLI (not in homebrew-core)
 
 # --- Shells & shell tooling --------------------------------------------------
 brew "bash"                # newer bash than macOS's 3.x — required by some scripts
@@ -46,7 +46,7 @@ brew "moreutils"           # sponge, ts, vidir, etc.
 brew "git"
 brew "git-lfs"
 brew "gh"                  # GitHub CLI — also the canonical token store (see .extra)
-brew "graphite"            # gt CLI used by ask-rogo
+brew "withgraphite/tap/graphite"   # gt CLI (must be tap-qualified; bare "graphite" is a different/unknown formula)
 brew "openssh"
 brew "curl"
 brew "wget"

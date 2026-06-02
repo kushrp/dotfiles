@@ -66,6 +66,20 @@ jobs:
           # raises rate limits.
           HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Put Homebrew bin on PATH for later steps
+        run: echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
+      - name: Verify the toolchain actually installed
+        run: |
+          # brew bundle resolves the whole Brewfile as one batch — a single bad
+          # formula aborts ALL installs. Assert the key tools are really present
+          # so a hollow "shell starts" pass can't mask a failed bundle.
+          missing=0
+          for t in nvim starship zoxide atuin fzf eza bat tmux mise; do
+            command -v "$t" >/dev/null || { echo "::error::$t not installed (brew bundle likely failed)"; missing=1; }
+          done
+          exit $missing
+
       - name: Verify shell starts cleanly
         run: |
           # zsh -i exits non-zero if .zshrc errors. Capture and surface.
