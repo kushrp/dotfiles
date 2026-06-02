@@ -1,0 +1,6 @@
+.luarc.json
+spell/
+
+# Note: lazy-lock.json is intentionally NOT gitignored.
+# It pins every plugin to a specific commit, making the nvim setup
+# reproducible across machines. `:Lazy sync` updates it; commit the change.

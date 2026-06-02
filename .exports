@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 
-# Make vim the default editor.
-export EDITOR='vim';
+# Make neovim the default editor, falling back to vim then vi.
+if command -v nvim >/dev/null 2>&1; then
+	export EDITOR='nvim';
+	export VISUAL='nvim';
+	alias vim='nvim';
+else
+	export EDITOR='vim';
+	export VISUAL='vim';
+fi
 
 # Enable persistent REPL history for `node`.
 export NODE_REPL_HISTORY=~/.node_history;
@@ -23,11 +30,18 @@ export HISTCONTROL='ignoreboth';
 export LANG='en_US.UTF-8';
 export LC_ALL='en_US.UTF-8';
 
-# Highlight section titles in manual pages.
-export LESS_TERMCAP_md="${yellow}";
+# Highlight section titles in manual pages (bold yellow; reset after).
+export LESS_TERMCAP_md=$'\e[1;33m';
+export LESS_TERMCAP_me=$'\e[0m';
 
-# Don’t clear the screen after quitting a manual page.
-export MANPAGER='less -X';
+# Render man pages through bat (syntax-highlighted) when available, else plain
+# less with raw colors. `-X` was dropped — it breaks scroll/mouse on modern less.
+if command -v bat >/dev/null 2>&1; then
+	export MANPAGER="sh -c 'col -bx | bat --language=man --plain'";
+	export MANROFFOPT='-c';
+else
+	export MANPAGER='less -R';
+fi
 
 # Avoid issues with `gpg` as installed via Homebrew.
 # https://stackoverflow.com/a/42265848/96656

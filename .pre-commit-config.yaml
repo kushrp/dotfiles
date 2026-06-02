@@ -1,0 +1,144 @@
+# Pre-commit hooks for this dotfiles repo.
+#
+# Install once per clone:   pre-commit install
+# Run all hooks manually:   pre-commit run --all-files
+# Skip a specific hook:     SKIP=hook-id git commit -m '...'
+# Bypass entirely (rare):   git commit --no-verify
+#
+# install.sh does `pre-commit install` automatically, so a fresh laptop
+# gets the hooks the first time it runs ./install.sh.
+
+default_install_hook_types: [pre-commit, commit-msg]
+fail_fast: false
+
+repos:
+  # --- Secret scanning -----------------------------------------------------
+  # gitleaks runs against staged content. Custom rules + allowlist live in
+  # .gitleaks.toml (e.g. to whitelist the `ghp_xxxxxxxx...` placeholder in
+  # .extra.example).
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # --- Standard hygiene ----------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        # markdown uses trailing spaces for line breaks; .vim/ is vendored.
+        exclude: '\.md$|^\.vim/'
+      - id: end-of-file-fixer
+        exclude: '^\.vim/'              # vendored colorscheme/syntax — leave pristine
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: check-symlinks            # fail if a symlink points nowhere
+      - id: check-yaml                # parse .github/workflows/*.yaml, .pre-commit-config.yaml
+      - id: check-json
+      - id: check-toml                # parse starship.toml, .config/**/*.toml
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+        # rc / config files are sourced, not executed. Their shebangs exist
+        # for editor filetype detection and shellcheck — they intentionally
+        # do not have +x.
+        exclude: |
+          (?x)^(
+            \.aliases|
+            \.bash_profile|
+            \.bash_prompt|
+            \.bashrc|
+            \.exports|
+            \.extra\.example|
+            \.functions|
+            \.zprofile|
+            \.zshrc
+          )$
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  # --- shellcheck on every bash script -------------------------------------
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        files: '\.(sh|bash)$|^(install|bootstrap|brew)$|^install\.sh$|^bootstrap\.sh$|^brew\.sh$'
+        args: ["--severity=warning"]   # don't fail on style nitpicks
+
+  # --- Local checks (this repo only) ---------------------------------------
+  - repo: local
+    hooks:
+      # Files that hold machine-local secrets must never be tracked.
+      - id: block-secret-files
+        name: block .extra / .gitconfig.local / Brewfile.local from being tracked
+        entry: |
+          bash -c '
+            blocked=""
+            for f in "$@"; do
+              case "$f" in
+                .extra|.gitconfig.local|Brewfile.local)
+                  blocked="$blocked $f" ;;
+              esac
+            done
+            if [ -n "$blocked" ]; then
+              echo "FATAL: these files must never be committed:$blocked" >&2
+              echo "  unstage with: git restore --staged$blocked" >&2
+              exit 1
+            fi
+          ' --
+        language: system
+        pass_filenames: true
+        always_run: false
+
+      # zsh syntax parse for the shell config files.
+      - id: zsh-syntax
+        name: zsh -n on .zshrc / .zprofile
+        entry: zsh -n
+        language: system
+        files: '^\.(zshrc|zprofile|zlogin|zlogout|zshenv)$'
+
+      # ghostty self-validates its config.
+      - id: ghostty-validate
+        name: ghostty +validate-config
+        entry: bash -c 'command -v ghostty >/dev/null && ghostty +validate-config --config-file="$0" || echo "(ghostty not installed, skipping)"'
+        language: system
+        files: '^\.config/ghostty/config$'
+
+      # nvim --headless smoke test when the nvim config changes.
+      # `+qa!` exits as soon as init.lua finishes loading.
+      - id: nvim-headless
+        name: nvim --headless smoke test
+        entry: bash -c 'command -v nvim >/dev/null && timeout 30 nvim --headless "+qa!" || echo "(nvim not installed, skipping)"'
+        language: system
+        files: '^\.config/nvim/.*\.lua$|^\.config/nvim/init\.lua$'
+        pass_filenames: false
+
+      # Validate the Brewfile by parsing it through `brew bundle list`.
+      - id: brewfile-syntax
+        name: brew bundle list (Brewfile parses)
+        entry: bash -c 'command -v brew >/dev/null && brew bundle list --file="$0" >/dev/null || echo "(brew not installed, skipping)"'
+        language: system
+        files: '^Brewfile$'
+
+      # Reject `ghp_xxxxxxxx...` placeholders being committed, except in the
+      # files that legitimately reference the pattern: the template, the
+      # gitleaks allowlist, and this hook's own config.
+      - id: no-placeholder-tokens-elsewhere
+        name: token placeholders only allowed in template / scanner config
+        entry: |
+          bash -c '
+            ec=0
+            for f in "$@"; do
+              case "$f" in
+                .extra.example|.gitleaks.toml|.pre-commit-config.yaml) continue ;;
+              esac
+              [ -f "$f" ] || continue
+              if LC_ALL=C grep -E "(ghp|gho|ghu|ghs|ghr)_x{10,}" "$f" >/dev/null; then
+                echo "FATAL: token placeholder in $f (only .extra.example / .gitleaks.toml may mention these)" >&2
+                ec=1
+              fi
+            done
+            exit $ec
+          ' --
+        language: system
+        pass_filenames: true

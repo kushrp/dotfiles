@@ -66,6 +66,9 @@
 	# Show the user email for the current repository.
 	whoami = config user.email
 
+	# Launch lazygit TUI in the current repo.
+	lg = !lazygit
+
 [apply]
 
 	# Detect whitespace errors when applying a patch.
@@ -75,6 +78,13 @@
 
 	# Show most recently changed branches first.
 	sort = -committerdate
+
+[rerere]
+
+	# Reuse recorded resolution — git remembers conflict resolutions and
+	# auto-applies them next time the same conflict appears.
+	enabled = true
+	autoupdate = true
 
 [core]
 
@@ -135,21 +145,61 @@
 
 	# Detect copies as well as renames.
 	renames = copies
+	# Use git's experimental histogram diff algorithm — better hunks than the default.
+	algorithm = histogram
+	colorMoved = default
 
 [diff "bin"]
 
 	# Use `hexdump` to diff binary files.
 	textconv = hexdump -v -C
 
+# delta — syntax-highlighted, side-by-side git diffs.
+# Falls back gracefully to `less` if delta isn't installed.
+[core]
+	pager = delta
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	navigate = true        # n/N to jump between diff sections
+	light = false          # we use dark themes everywhere
+	side-by-side = true
+	line-numbers = true
+	syntax-theme = "Monokai Extended Origin"
+
 [help]
 
-	# Automatically correct and execute mistyped commands.
-	autocorrect = 1
+	# Suggest the corrected command and ask before running it (don't auto-execute).
+	autocorrect = prompt
+
+[fetch]
+
+	# Delete remote-tracking refs that no longer exist on the remote.
+	prune = true
+
+[rebase]
+
+	# Reorder fixup!/squash! commits automatically, and stash/unstash dirty work.
+	autosquash = true
+	autoStash = true
+
+[column]
+
+	# Columnar output for `git branch`, `git tag`, etc. when writing to a terminal.
+	ui = auto
+
+[tag]
+
+	# Sort tags by version number, not lexically (v1.10 after v1.9).
+	sort = version:refname
 
 [merge]
 
 	# Include summaries of merged commits in newly created merge commit messages
 	log = true
+	# zdiff3 shows the original common ancestor in conflict markers — much
+	# easier to resolve conflicts because you see what was there before either branch changed it.
+	conflictstyle = zdiff3
 
 [push]
 
@@ -158,15 +208,16 @@
 	# Make `git push` push relevant annotated tags when pushing branches out.
 	followTags = true
 
-# URL shorthands
+# URL shorthands. GitHub disabled the unauthenticated git:// protocol in 2022,
+# so reads go over https and pushes over ssh.
 
 [url "git@github.com:"]
 
 	insteadOf = "gh:"
 	pushInsteadOf = "github:"
-	pushInsteadOf = "git://github.com/"
+	pushInsteadOf = "https://github.com/"
 
-[url "git://github.com/"]
+[url "https://github.com/"]
 
 	insteadOf = "github:"
 
@@ -174,9 +225,9 @@
 
 	insteadOf = "gst:"
 	pushInsteadOf = "gist:"
-	pushInsteadOf = "git://gist.github.com/"
+	pushInsteadOf = "https://gist.github.com/"
 
-[url "git://gist.github.com/"]
+[url "https://gist.github.com/"]
 
 	insteadOf = "gist:"
 

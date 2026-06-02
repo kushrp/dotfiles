@@ -1,0 +1,147 @@
+name: install.sh smoke test
+
+# Runs install.sh on a fresh macOS runner to catch:
+#   - brew cask renames (e.g. linear-linear -> linear)
+#   - dead formulae / deprecated --with flags
+#   - broken symlink targets after refactors
+#   - missing files referenced from install.sh
+#
+# The runner has no GUI, no Touch ID, no sudo password — so cask installs
+# that need to "adopt" pre-existing /Applications/*.app would fail. We pass
+# --no-casks for that reason. Casks are validated separately on a real Mac.
+#
+# Linux smoke test stub: install.sh detects Linux and runs an apt path.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "install.sh"
+      - "bootstrap.sh"
+      - "Brewfile"
+      - "Brewfile.local"
+      - ".zshrc"
+      - ".zprofile"
+      - ".gitconfig"
+      - ".config/**"
+      - ".github/workflows/install.yml"
+  pull_request:
+    paths:
+      - "install.sh"
+      - "bootstrap.sh"
+      - "Brewfile"
+      - ".zshrc"
+      - ".zprofile"
+      - ".gitconfig"
+      - ".config/**"
+      - ".github/workflows/install.yml"
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: macOS install (no-casks)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Seed minimal ~/.extra
+        run: |
+          cat > "$HOME/.extra" <<'EOF'
+          # CI placeholder; real ~/.extra is written by install.sh from .extra.example.
+          export GIT_AUTHOR_NAME="ci"
+          export GIT_AUTHOR_EMAIL="ci@example.com"
+          git config --global user.name "$GIT_AUTHOR_NAME"
+          git config --global user.email "$GIT_AUTHOR_EMAIL"
+          EOF
+          chmod 600 "$HOME/.extra"
+
+      - name: bash syntax check
+        run: bash -n install.sh && bash -n bootstrap.sh
+
+      - name: Run install.sh (formulae only, skip macOS defaults)
+        run: ./install.sh --no-casks --no-macos -y
+        env:
+          # Some brew formulae auto-pull from GitHub; the default GITHUB_TOKEN
+          # raises rate limits.
+          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify shell starts cleanly
+        run: |
+          # zsh -i exits non-zero if .zshrc errors. Capture and surface.
+          if ! zsh -i -c 'true'; then
+            echo "::error::zsh -i failed"
+            exit 1
+          fi
+
+      - name: Verify warm shell startup is fast
+        run: |
+          # Warm: 3rd invocation, plugin caches populated.
+          zsh -i -c true >/dev/null 2>&1
+          zsh -i -c true >/dev/null 2>&1
+          t=$(/usr/bin/time -p zsh -i -c true 2>&1 | awk '/real/ {print $2}')
+          echo "Warm startup: ${t}s"
+          # Budget: 300ms on a CI runner (slower than M-series local). Fail if blown.
+          awk -v t="$t" 'BEGIN { exit (t+0 > 0.3) ? 1 : 0 }' || {
+            echo "::error::warm zsh startup ${t}s exceeded 0.3s budget"
+            exit 1
+          }
+
+      - name: Verify Neovim launches headless
+        run: |
+          # First nvim launch bootstraps lazy.nvim and installs plugins; allow up to 90s.
+          # `+qa!` exits as soon as init.lua + lazy setup finish.
+          timeout 120 nvim --headless '+qa!' || {
+            echo "::error::nvim headless launch failed"
+            exit 1
+          }
+
+      - name: Verify Ghostty config parses
+        run: |
+          if command -v ghostty >/dev/null 2>&1; then
+            ghostty +validate-config --config-file="$HOME/.config/ghostty/config"
+          else
+            echo "ghostty not installed (cask was skipped); skipping validate-config"
+          fi
+
+      - name: Symlinks point at the repo
+        run: |
+          set -e
+          for f in .zshrc .zprofile .gitconfig .aliases .functions .exports \
+                   .config/ghostty/config .config/starship.toml .config/nvim \
+                   .config/mods/mods.yml; do
+            target="$(readlink "$HOME/$f")"
+            case "$target" in
+              "$GITHUB_WORKSPACE"/*) echo "OK  $f -> $target" ;;
+              *) echo "::error::$f points to $target (expected under $GITHUB_WORKSPACE)"; exit 1 ;;
+            esac
+          done
+
+  pre-commit:
+    name: pre-commit (all hooks, all files)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks works better with full history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: pre-commit/action@v3.0.1
+        env:
+          # Skip ghostty + nvim local hooks in CI — those binaries aren't
+          # available on the Linux runner. The macOS job above validates them.
+          SKIP: ghostty-validate,nvim-headless,brewfile-syntax
+
+  gitleaks:
+    name: gitleaks (full-history secret scan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

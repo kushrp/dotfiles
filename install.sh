@@ -151,7 +151,6 @@ install_packages() {
         sudo -v || warn "sudo cache failed; some casks may need manual install"
       fi
 
-      local bundle_args=()
       if (( SKIP_CASKS )); then
         # Filter out cask lines on the fly so we only install formulae.
         log "brew bundle (formulae only, --no-casks)"
@@ -213,6 +212,7 @@ DOTFILES_TO_LINK=(
   .inputrc
   .screenrc
   .tmux.conf
+  .tmux-cheatsheet.md
   .vimrc
   .wgetrc
   .zprofile
@@ -245,12 +245,148 @@ setup_ghostty() {
   ok "linked → ~/.config/ghostty/config"
 }
 
+setup_starship() {
+  log "Starship config"
+  link_file "$DOTFILES/.config/starship.toml" "$HOME/.config/starship.toml"
+}
+
+setup_neovim() {
+  log "Neovim (LazyVim)"
+  # Link the entire ~/.config/nvim tree to the repo. lazy.nvim self-bootstraps
+  # on first launch, so just having the config in place is enough.
+  link_file "$DOTFILES/.config/nvim" "$HOME/.config/nvim"
+  if command -v nvim >/dev/null 2>&1; then
+    ok "nvim found: $(nvim --version | head -n1)"
+  else
+    warn "nvim not installed yet — first launch after brew bundle will bootstrap LazyVim"
+  fi
+}
+
+setup_llm() {
+  log "llm (terminal AI pipe)"
+  if ! command -v llm >/dev/null 2>&1; then
+    warn "llm not installed yet; will set up on next run after brew bundle"
+    return
+  fi
+  # Anthropic plugin (idempotent — no-op if already present).
+  if ! llm plugins 2>/dev/null | grep -q llm-anthropic; then
+    llm install llm-anthropic >/dev/null 2>&1 || warn "llm install llm-anthropic failed"
+  fi
+  # Default model for bare `llm '...'` and the ai/explain helpers.
+  # (llm-anthropic exposes the dotted alias claude-sonnet-4.6.)
+  llm models default claude-sonnet-4.6 >/dev/null 2>&1 || true
+  ok "llm ready (set ANTHROPIC_API_KEY in ~/.extra, or run: llm keys set anthropic)"
+}
+
+setup_zsh_tips() {
+  log "zsh tips file"
+  link_file "$DOTFILES/.config/zsh/tips.txt" "$HOME/.config/zsh/tips.txt"
+}
+
+setup_tmux() {
+  log "tmux + tpm (plugin manager)"
+  local tpm_dir="$HOME/.tmux/plugins/tpm"
+  if [[ ! -d "$tpm_dir" ]]; then
+    git clone --depth 1 https://github.com/tmux-plugins/tpm "$tpm_dir" >/dev/null 2>&1 \
+      || { fail "clone tpm"; return; }
+  fi
+  if command -v tmux >/dev/null 2>&1; then
+    # Headless install of the plugins listed in ~/.tmux.conf. Needs a server,
+    # not an attached client.
+    tmux start-server 2>/dev/null
+    tmux source-file "$HOME/.tmux.conf" 2>/dev/null || true
+    "$tpm_dir/bin/install_plugins" >/dev/null 2>&1 || warn "tpm install_plugins returned non-zero"
+    ok "tmux plugins installed (prefix C-a, then I to reinstall / U to update)"
+  else
+    warn "tmux not installed yet — re-run after brew bundle"
+  fi
+}
+
+setup_atuin() {
+  log "atuin config"
+  # atuin writes a default config on first run. Back it up and replace with
+  # ours (which disables the startup network update-check).
+  link_file "$DOTFILES/.config/atuin/config.toml" "$HOME/.config/atuin/config.toml"
+}
+
+setup_precommit() {
+  log "pre-commit hooks"
+  if ! command -v pre-commit >/dev/null 2>&1; then
+    warn "pre-commit not installed yet; will activate on next install.sh after brew bundle"
+    return
+  fi
+  if [[ ! -d "$DOTFILES/.git" ]]; then
+    warn "dotfiles dir is not a git repo, skipping pre-commit install"
+    return
+  fi
+  # `pre-commit install` writes .git/hooks/pre-commit (and commit-msg per
+  # default_install_hook_types in .pre-commit-config.yaml). Idempotent.
+  ( cd "$DOTFILES" && pre-commit install --install-hooks >/dev/null 2>&1 ) \
+    || fail "pre-commit install"
+  ok "pre-commit hooks active in $DOTFILES"
+}
+
+setup_mise_default_node() {
+  log "mise — default node + idiomatic version files"
+  if ! command -v mise >/dev/null 2>&1; then
+    warn "mise not installed yet; skipping"
+    return
+  fi
+
+  # Opt in to .nvmrc / .python-version / .ruby-version / .go-version /
+  # .terraform-version reading. By default mise only reads .tool-versions
+  # and .mise.toml, which silently breaks repos that ship .nvmrc.
+  if ! mise settings set idiomatic_version_file_enable_tools \
+       "node,python,ruby,go,terraform" 2>&1 | grep -v '^$'; then
+    warn "mise settings set failed (above)"
+  fi
+
+  # mise refuses to load config files it hasn't been told to trust. Trust
+  # our global config explicitly so install.sh and shell init don't get a
+  # "Config files not trusted" prompt on a fresh laptop.
+  mkdir -p "$HOME/.config/mise"
+  mise trust "$HOME/.config/mise/config.toml" >/dev/null 2>&1 || true
+
+  # Global default node = LTS. Per-repo .nvmrc / .tool-versions override.
+  # Don't suppress errors — if this fails, the user needs to see why.
+  if mise use --global "node@lts"; then
+    ok "mise: node@$(mise current node 2>/dev/null | head -n1 || echo '?')"
+  else
+    fail "mise use --global node@lts (see error above)"
+  fi
+}
+
+
+setup_fzf_keybindings() {
+  # fzf ships shell integration but it's not auto-installed. Wire it up
+  # non-interactively (no prompts, no changes to .zshrc — .zshrc sources
+  # the integration files directly).
+  log "fzf shell integration"
+  local fzf_install
+  if command -v brew >/dev/null 2>&1; then
+    fzf_install="$(brew --prefix)/opt/fzf/install"
+  fi
+  if [[ -x "$fzf_install" ]]; then
+    "$fzf_install" --all --no-bash --no-fish --no-update-rc --xdg >/dev/null \
+      || warn "fzf install script returned non-zero (usually harmless)"
+    ok "fzf integration ready"
+  else
+    warn "fzf install script not found; brew bundle may not have completed"
+  fi
+}
+
 ensure_vim_dirs() {
+  # ~/.vim/{backups,swaps,undo} must be real, writable dirs (vim writes here).
+  # ~/.vim/{colors,syntax} ship in the repo; symlink them so `.vimrc` can
+  # `colorscheme solarized` etc. without a separate plugin manager.
   mkdir -p "$HOME/.vim/backups" "$HOME/.vim/swaps" "$HOME/.vim/undo"
+  link_file "$DOTFILES/.vim/colors" "$HOME/.vim/colors"
+  link_file "$DOTFILES/.vim/syntax" "$HOME/.vim/syntax"
 }
 
 setup_extra() {
-  log "~/.extra (secrets, identity)"
+  # shellcheck disable=SC2088  # tilde is display-only; path resolution uses $HOME below
+  log '~/.extra (secrets, identity)'
   if [[ -f "$HOME/.extra" ]]; then
     ok "already exists, leaving alone"
     return
@@ -301,6 +437,43 @@ apply_os_defaults() {
   esac
 }
 
+# --- verification ----------------------------------------------------------
+verify_stack() {
+  log "Verifying stack"
+  local -a needed=(
+    zsh git gh brew bun nvim tmux
+    starship zoxide fzf rg fd bat eza
+    mise direnv atuin lazygit delta llm
+    navi tldr
+    pre-commit gitleaks
+  )
+  for cmd in "${needed[@]}"; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+      ok "$cmd → $(command -v "$cmd")"
+    else
+      warn "$cmd missing"
+    fi
+  done
+
+  # Ghostty config sanity check (if ghostty is installed).
+  if command -v ghostty >/dev/null 2>&1; then
+    if ghostty +validate-config --config-file="$HOME/.config/ghostty/config" >/dev/null 2>&1; then
+      ok "ghostty config valid"
+    else
+      fail "ghostty +validate-config"
+    fi
+  fi
+
+  # Neovim headless smoke test: load init.lua without errors.
+  if command -v nvim >/dev/null 2>&1; then
+    if nvim --headless '+qall' >/dev/null 2>&1; then
+      ok "nvim launches cleanly"
+    else
+      warn "nvim returned non-zero on headless launch (likely first-run plugin install)"
+    fi
+  fi
+}
+
 # --- summary ---------------------------------------------------------------
 summary() {
   echo
@@ -332,9 +505,19 @@ main() {
   ensure_vim_dirs
   symlink_dotfiles
   setup_ghostty
+  setup_starship
+  setup_neovim
+  setup_tmux
+  setup_llm
+  setup_zsh_tips
+  setup_atuin
+  setup_precommit
+  setup_fzf_keybindings
+  setup_mise_default_node
   setup_extra
   set_default_shell
   apply_os_defaults
+  verify_stack
   summary
 }
 

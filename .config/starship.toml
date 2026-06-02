@@ -1,0 +1,137 @@
+# Starship prompt — Tokyo Night palette.
+# https://starship.rs/config
+#
+# Layout:
+#   user@host  cwd  (git_branch git_status)  (lang version)  ⏱duration
+#   ❯
+# Right side shows time + jobs.
+
+add_newline = true
+command_timeout = 800
+
+format = """
+[](#7aa2f7)\
+$os\
+$username\
+[@](bg:#7aa2f7 fg:#1a1b26)\
+$hostname\
+[](bg:#3b4261 fg:#7aa2f7)\
+$directory\
+[](bg:#414868 fg:#3b4261)\
+$git_branch\
+$git_status\
+[](bg:#1a1b26 fg:#414868)\
+$nodejs\
+$bun\
+$python\
+$rust\
+$golang\
+$cmd_duration\
+$line_break\
+$character"""
+
+right_format = """$time"""
+
+palette = "tokyonight"
+
+[palettes.tokyonight]
+bg       = "#1a1b26"
+fg       = "#c0caf5"
+selection = "#283457"
+blue     = "#7aa2f7"
+cyan     = "#7dcfff"
+green    = "#9ece6a"
+magenta  = "#bb9af7"
+red      = "#f7768e"
+yellow   = "#e0af68"
+gray     = "#414868"
+darkgray = "#3b4261"
+
+[username]
+show_always = false
+style_user = "bg:#7aa2f7 fg:#1a1b26 bold"
+style_root = "bg:red fg:#1a1b26 bold"
+format = '[ $user ]($style)'
+disabled = false
+
+[hostname]
+ssh_only = true
+style = "bg:#7aa2f7 fg:#1a1b26 bold"
+format = '[$hostname]($style)'
+
+[directory]
+style = "bg:#3b4261 fg:#7dcfff bold"
+format = '[ $path ]($style)'
+truncation_length = 4
+truncation_symbol = "…/"
+read_only = "  "
+
+[directory.substitutions]
+"Documents" = "󰈙 "
+"Downloads" = " "
+"Music" = " "
+"Pictures" = " "
+
+[git_branch]
+symbol = ""
+style = "bg:#414868 fg:#bb9af7"
+format = '[ $symbol $branch ]($style)'
+
+[git_status]
+style = "bg:#414868 fg:#f7768e"
+format = '[$all_status$ahead_behind ]($style)'
+conflicted = "="
+ahead = "⇡${count}"
+behind = "⇣${count}"
+diverged = "⇕⇡${ahead_count}⇣${behind_count}"
+up_to_date = ""
+untracked = "?"
+stashed = "$"
+modified = "!"
+staged = "+"
+renamed = "»"
+deleted = "✘"
+
+[nodejs]
+symbol = " "
+style = "fg:green"
+format = '[ $symbol($version) ]($style)'
+
+[bun]
+symbol = "🍞"
+style = "fg:magenta"
+format = '[ $symbol($version) ]($style)'
+
+[python]
+symbol = " "
+style = "fg:yellow"
+format = '[ $symbol(${version}) ]($style)'
+
+[rust]
+symbol = " "
+style = "fg:red"
+format = '[ $symbol($version) ]($style)'
+
+[golang]
+symbol = " "
+style = "fg:cyan"
+format = '[ $symbol($version) ]($style)'
+
+[cmd_duration]
+min_time = 2_000
+style = "fg:yellow"
+format = '[ ⏱ $duration ]($style)'
+
+[time]
+disabled = false
+time_format = "%H:%M"
+style = "fg:gray"
+format = '[  $time ]($style)'
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+vimcmd_symbol = "[❮](bold green)"
+
+[os]
+disabled = true

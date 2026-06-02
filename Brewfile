@@ -6,12 +6,32 @@
 # also runs if it exists.
 
 # --- Taps --------------------------------------------------------------------
-# (no custom taps required today)
+# (none — everything below is in homebrew-core)
 
 # --- Shells & shell tooling --------------------------------------------------
 brew "bash"                # newer bash than macOS's 3.x — required by some scripts
 brew "bash-completion@2"
 brew "zsh-completions"
+brew "zsh-autosuggestions"           # fish-style ghost-text from history
+brew "zsh-fast-syntax-highlighting"  # colorize commands as you type
+brew "zsh-you-should-use"            # nags when an alias exists — teaches your own shortcuts
+brew "fzf-tab"                       # fuzzy tab completion menu
+brew "starship"                      # cross-shell prompt (Rust, fast)
+brew "zoxide"                        # `cd foo` jumps to most-frecent match
+brew "atuin"                         # magical shell history (SQLite + fuzzy UI on Ctrl-R)
+brew "direnv"                        # auto-load .envrc when cd-ing into a project
+brew "mise"                          # replaces nvm/pyenv/rbenv/asdf; per-project tool versions
+brew "lazygit"                       # full-screen git TUI
+brew "git-delta"                     # syntax-highlighted git diffs
+
+# --- Learning / discoverability ----------------------------------------------
+brew "navi"                # Ctrl-G interactive cheatsheet → inserts an editable command
+brew "tealdeer"            # `tldr` — simplified man pages with real examples (Rust; NOT the EOL node `tldr`)
+brew "llm"                 # AI pipe: `cat err.log | llm 'what's wrong'` (replaces archived `mods`)
+# pay-respects (thefuck successor) intentionally omitted: only ships as a
+# checksum-drifting nightly tap that breaks `brew bundle`. Want it? `cargo
+# install pay-respects` and add the eval to ~/.extra. The AI `?` helper +
+# atuin history cover "fix my last command" robustly in the meantime.
 
 # --- GNU userland (mac's BSD versions are dated) -----------------------------
 brew "coreutils"
@@ -38,13 +58,18 @@ brew "eza"
 brew "tree"
 brew "tmux"
 brew "vim"
+brew "neovim"
 brew "htop"
 brew "watch"
 brew "mas"                 # mac App Store CLI
+brew "pre-commit"          # runs hooks from .pre-commit-config.yaml
+brew "gitleaks"            # secret scanner used by the pre-commit pipeline
 
 # --- Runtimes (for the ask-rogo monorepo and general dev) --------------------
+# Note: `mise` is the version manager (see above). It auto-installs Node /
+# Python / Go / Ruby etc. via `.tool-versions` or `.mise.toml`. Brew-installed
+# runtimes below are global fallbacks for tools that probe $PATH directly.
 brew "node"
-brew "nvm"
 brew "go"
 brew "python@3.13"
 brew "postgresql@16"

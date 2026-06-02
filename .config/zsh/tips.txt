@@ -1,0 +1,21 @@
+Ctrl-G → navi: fuzzy interactive cheatsheet, inserts an editable command
+Ctrl-R → atuin: fuzzy search your entire shell history
+Ctrl-T → fzf: insert a file path into the current command
+Alt-C  → fzf: cd into a subdirectory, fuzzy-picked
+Ctrl-X Ctrl-A → type a description, get an AI-suggested command on the line
+ai find files over 1GB → AI suggests the command (prints it, doesn't run it)
+explain <command> → AI explains what a command does, step by step
+help tar → tldr-style examples instead of a 600-line man page
+z dotfiles → zoxide jumps to the most-frecent dir matching "dotfiles"
+lg → lazygit: full-screen git UI
+cat err.log | llm 'what is wrong?' → pipe anything to the AI
+!$ → the last argument of the previous command; !! → the whole previous command
+Ctrl-arrow → jump the cursor by whole words
+In git: `git lg` is a pretty graph log; `gst` short status; `gd` delta diff
+tmux: prefix is Ctrl-a; press `Ctrl-a ?` for all keys, `Ctrl-a Ctrl-h` for the cheatsheet popup
+tmux: `Ctrl-a |` splits left/right, `Ctrl-a -` splits top/bottom (keeps cwd)
+tmux: `Ctrl-a g` opens lazygit in a popup over the current repo
+nvim: press the spacebar and wait — the which-key menu IS the cheatsheet
+nvim: `<space>sk` fuzzy-search every keybinding; `<space>?` opens the cheatsheet file
+eza: `la` long+icons+git, `lt` is a 2-level tree
+type `cheat` (or `keys`) anytime for the full shell cheatsheet

@@ -1,0 +1,29 @@
+# atuin config — magical shell history.
+# https://docs.atuin.sh/configuration/config/
+#
+# Perf-tuned: the two defaults that slow shell startup are disabled.
+
+# Don't phone home to GitHub to check for a newer atuin on every shell start.
+# (This was adding ~100-150ms to interactive startup.)
+update_check = false
+
+# Don't auto-sync on startup. Run `atuin sync` manually, or flip this to true
+# after `atuin login` if you set up the encrypted sync server.
+auto_sync = false
+
+# Keep new-style records sync format ready for when/if you enable sync.
+[sync]
+records = true
+
+# Pressing Enter on a selected history entry runs it immediately (vs. just
+# putting it on the command line).
+enter_accept = true
+
+[search]
+# "fuzzy" matches the spirit of fzf; "prefix"/"fulltext" also available.
+search_mode = "fuzzy"
+# Show results newest-first within the current directory context.
+filter_mode = "global"
+
+[preview]
+strategy = "auto"
