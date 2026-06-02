@@ -1,24 +1,32 @@
 #!/usr/bin/env bash
 # cc-dashboard — central control board for all tmux sessions / parallel agents.
-# One fuzzy screen: every window across every session, a live preview of each
-# pane's output + its git status, and action keys to jump / kill / open lazygit.
-# Bound to `prefix A` (tmux popup) and available as `ccd` in the shell.
+# One fuzzy screen: every window across every session, each tagged with its
+# Claude agent state (⏸ waiting / 🤖 working / ✅ done — from cc-status.sh),
+# waiting agents sorted to the top, a live preview of the pane + git status,
+# and action keys. Bound to `prefix A` (tmux popup) and `ccd` in the shell.
 #
-#   enter  jump to that session/window      ctrl-x  kill it
-#   ctrl-g lazygit in its dir               ctrl-r  refresh
+#   enter  jump        ctrl-x  kill        ctrl-g  lazygit
+#   ctrl-n new agent (type a name first)   ctrl-r  refresh
 set -o pipefail
 
+_glyph() { case "$1" in waiting) printf '⏸';; working) printf '🤖';; done) printf '✅';; *) printf '·';; esac; }
+# sort key so waiting(0) < working(1) < done(2) < idle(3)
+_rank()  { case "$1" in waiting) printf 0;; working) printf 1;; done) printf 2;; *) printf 3;; esac; }
+
 _rows() {
-  # field 1 (hidden): session:window target  ·  fields 2+: pretty display
-  tmux list-windows -a \
-    -F '#{session_name}:#{window_index}	#{?window_active,●,○} #{session_name}  #{window_name}  ‹#{pane_current_command}›' \
-    2>/dev/null
+  # rank \t target \t glyph session/window ‹cmd›   — sort by rank, hide cols 1-2
+  while IFS=$'\t' read -r target st name cmd; do
+    printf '%s\t%s\t%s %s  ‹%s›\n' "$(_rank "$st")" "$target" "$(_glyph "$st")" "$name" "$cmd"
+  done < <(tmux list-windows -a \
+      -F '#{session_name}:#{window_index}	#{?#{@cc_status},#{@cc_status},none}	#{session_name}  #{window_name}	#{pane_current_command}' 2>/dev/null) \
+    | sort -t$'\t' -k1,1n
 }
 
 _preview() {
   local target="$1"
   local path; path=$(tmux display-message -p -t "$target" '#{pane_current_path}' 2>/dev/null)
-  printf '\e[1;34m%s\e[0m\n' "${path/#$HOME/~}"
+  local st;   st=$(tmux show-options -wqv -t "$target" @cc_status 2>/dev/null)
+  printf '\e[1;34m%s\e[0m   \e[33m%s\e[0m\n' "${path/#$HOME/~}" "${st:+[$st]}"
   if git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     printf '\e[36m %s\e[0m\n' "$(git -C "$path" symbolic-ref --quiet --short HEAD 2>/dev/null || echo detached)"
     git -C "$path" -c color.status=always status -s 2>/dev/null | head -12
@@ -36,11 +44,13 @@ if [[ -z "$(_rows)" ]]; then
   echo "No tmux windows yet. Start an agent with:  cc <name>"; sleep 1.6; exit 0
 fi
 
-_rows | fzf --ansi --no-sort --delimiter='\t' --with-nth=2.. \
-  --border-label ' 🤖 agents — enter:jump  ^x:kill  ^g:lazygit  ^r:refresh ' \
+# ctrl-n: spawn `cc`-style from the typed query {q} (a new agent worktree+window).
+_rows | fzf --ansi --no-sort --delimiter='\t' --with-nth=3.. \
+  --border-label ' 🤖 agents — enter:jump  ^x:kill  ^g:lazygit  ^n:new  ^r:refresh ' \
   --preview-window 'right:60%,border-left' \
-  --preview "$0 --preview {1}" \
+  --preview "$0 --preview {2}" \
   --bind "ctrl-r:reload($0 --rows)" \
-  --bind "ctrl-x:execute-silent(tmux kill-window -t {1})+reload($0 --rows)" \
-  --bind "ctrl-g:execute(p=\$(tmux display-message -p -t {1} '#{pane_current_path}'); tmux display-popup -E -d \"\$p\" -w 90% -h 90% lazygit)" \
-  --bind "enter:become(tmux switch-client -t {1} 2>/dev/null || tmux attach -t {1})"
+  --bind "ctrl-x:execute-silent(tmux kill-window -t {2})+reload($0 --rows)" \
+  --bind "ctrl-g:execute(p=\$(tmux display-message -p -t {2} '#{pane_current_path}'); tmux display-popup -E -d \"\$p\" -w 90% -h 90% lazygit)" \
+  --bind "ctrl-n:execute(name={q}; [ -n \"\$name\" ] && tmux new-window -n \"\$name\" \"claude --worktree '\$name'\")+abort" \
+  --bind "enter:become(tmux switch-client -t {2} 2>/dev/null || tmux attach -t {2})"

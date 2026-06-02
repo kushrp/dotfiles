@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# cc-coach — "spot & suggest": tracks which power-features you've actually used
+# and nudges the ones you haven't. The zsh preexec hook (in .zshrc) records a
+# feature id to $USED whenever you run its command.
+#
+#   cc-coach                 scorecard: ✅ used / ◻️ not yet, with how-tos
+#   cc-coach --suggest-one   one nudge line for an unused feature (or nothing)
+#   cc-coach --used <id>     mark a feature used (used by the preexec hook)
+USED="${XDG_CACHE_HOME:-$HOME/.cache}/cc-coach/used"
+mkdir -p "$(dirname "$USED")"; touch "$USED"
+
+# id | label | how-to
+FEATURES=(
+  "cc|spawn a Claude agent in its own worktree|cc <name> [prompt]"
+  "ccd|the agent control dashboard|ccd   (or tmux: prefix A)"
+  "ai|AI suggests a shell command|ai find files over 1GB"
+  "explain|AI explains a command|explain 'rsync -aHAX a/ b/'"
+  "llm|pipe anything to the AI|cat err.log | llm 'what is wrong?'"
+  "z|jump to a frecent dir|z dotfiles"
+  "lazygit|full-screen git TUI|lg   (or tmux: prefix g)"
+  "tldr|real-example man pages|help tar   (alias for tldr)"
+  "cheat|the full shell cheatsheet|cheat   (or: keys)"
+  "sesh|fuzzy session/worktree jumper|tmux: prefix T"
+  "nvim|the editor (LazyVim)|nvim .   then press <space>"
+  "gt|Graphite stacked PRs|gt create / gt submit"
+)
+
+is_used() { grep -qxF "$1" "$USED" 2>/dev/null; }
+
+if [[ "$1" == "--used" ]]; then
+  [[ -n "$2" ]] && ! is_used "$2" && printf '%s\n' "$2" >> "$USED"
+  exit 0
+fi
+
+if [[ "$1" == "--suggest-one" ]]; then
+  # First unused feature (definition order = rough priority). Silent if all used.
+  for spec in "${FEATURES[@]}"; do
+    IFS='|' read -r id label howto <<<"$spec"
+    if ! is_used "$id"; then
+      printf "try %s — %s  ⟶  %s" "$id" "$label" "$howto"
+      exit 0
+    fi
+  done
+  exit 0
+fi
+
+# Scorecard.
+used=0; total=${#FEATURES[@]}
+printf '\e[1;35m  Claude-maxxing scorecard\e[0m\n'
+for spec in "${FEATURES[@]}"; do
+  IFS='|' read -r id label howto <<<"$spec"
+  if is_used "$id"; then
+    printf '  \e[32m✅ %-9s\e[0m %s\n' "$id" "$label"; used=$((used + 1))
+  else
+    printf '  \e[2m◻️  %-9s %s\e[0m\n      \e[36m⟶ %s\e[0m\n' "$id" "$label" "$howto"
+  fi
+done
+printf '\n  \e[1m%d/%d\e[0m features used. ' "$used" "$total"
+if (( used == total )); then
+  printf '\e[32myou are fully maxxed 🚀\e[0m\n'
+else
+  printf 'run \e[36mlearn\e[0m for an interactive tour of the rest.\n'
+fi

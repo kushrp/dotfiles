@@ -366,6 +366,9 @@ cheat() {
   print -P "  %F{6}ai <desc>%f  suggest a command       %F{6}explain <cmd>%f explain a command"
   print -P "  %F{6}help <cmd>%f tldr examples (tealdeer) %F{6}cat | llm '…'%f pipe anything to AI"
   print -P "  %F{6}z <dir>%f   zoxide jump               %F{6}lg%f        lazygit"
+  print -P "%B%F{4}── agents & learning ──%f%b"
+  print -P "  %F{6}cc <name>%f spawn agent in a worktree %F{6}ccd%f / prefix A  agent dashboard"
+  print -P "  %F{6}coach%f     what to try next          %F{6}learn%f     interactive tour"
   print -P "%B%F{4}── your aliases ──%f%b  (g = git)"
   alias | sort | sed 's/^/  /' | (bat --style=plain --language=sh --color=always 2>/dev/null || cat)
   print -P "%B%F{4}── tmux ──%f%b  prefix %F{6}Ctrl-a%f, then %F{6}?%f (all keys) or %F{6}Ctrl-h%f (cheatsheet popup)"
@@ -385,19 +388,46 @@ ghostty-keys() {
   print "  cmd+enter fullscreen   cmd+grave quick-terminal dropdown"
 }
 
-# Tip-of-the-day: one rotating learning nudge per interactive shell. Pure-zsh
-# file read (no fork), interactive-gated, ~1ms. Grow ~/.config/zsh/tips.txt as
-# you learn. The first line always advertises the cheatsheet affordance.
+# --- Coach: spot & suggest (learn the setup as you go) ---------------------
+# A cheap preexec hook records which power-features you actually use; `coach`
+# shows a scorecard of what's left, and the tip-of-the-day preferentially
+# nudges a feature you haven't tried yet.
+alias coach='cc-coach'
+alias learn='cc-learn'
+
+# Map the first word of each command you run to a tracked feature id.
+_cc_track() {
+  local word="${1%% *}" feat="" used="${XDG_CACHE_HOME:-$HOME/.cache}/cc-coach/used"
+  case "$word" in
+    cc) feat=cc ;; ccd|cc-dashboard) feat=ccd ;; ai) feat=ai ;; explain) feat=explain ;;
+    llm) feat=llm ;; z) feat=z ;; lg|lazygit) feat=lazygit ;; tldr|help) feat=tldr ;;
+    cheat|keys) feat=cheat ;; nvim|vim) feat=nvim ;; gt) feat=gt ;;
+    *) return ;;
+  esac
+  [[ -r "$used" ]] && grep -qxF "$feat" "$used" 2>/dev/null && return
+  mkdir -p "${used:h}"; print -r -- "$feat" >> "$used"
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook preexec _cc_track
+
+# Tip-of-the-day: ~60% of the time nudge an unused feature (the coach), else a
+# random tip from ~/.config/zsh/tips.txt. Pure-zsh, interactive-gated, ~1-2ms.
 _zsh_tip() {
   [[ -o interactive ]] || return
+  if (( RANDOM % 5 < 3 )) && command -v cc-coach >/dev/null 2>&1; then
+    local nudge; nudge="$(cc-coach --suggest-one 2>/dev/null)"
+    if [[ -n "$nudge" ]]; then
+      print -Pn "%F{8}coach%f %F{6}"; print -rn -- "$nudge"
+      print -P "%f  %F{8}(coach = scorecard · learn = tour)%f"
+      return
+    fi
+  fi
   local f="${XDG_CONFIG_HOME:-$HOME/.config}/zsh/tips.txt"
   [[ -r "$f" ]] || return
   local -a tips; tips=("${(@f)$(<"$f")}")
   (( ${#tips} )) || return
-  # Print the tip body with `print -r` (literal — never reinterprets backticks,
-  # pipes, %-escapes, or globs in the tip text); decorate around it separately.
   print -Pn "%F{8}tip%f %F{6}"
   print -rn -- "${tips[$((RANDOM % ${#tips} + 1))]}"
-  print -P "%f  %F{8}(type 'cheat' for the full cheatsheet)%f"
+  print -P "%f  %F{8}(type 'cheat' for the cheatsheet · 'learn' for a tour)%f"
 }
 _zsh_tip

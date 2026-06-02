@@ -19,3 +19,8 @@ nvim: press the spacebar and wait — the which-key menu IS the cheatsheet
 nvim: `<space>sk` fuzzy-search every keybinding; `<space>?` opens the cheatsheet file
 eza: `la` long+icons+git, `lt` is a 2-level tree
 type `cheat` (or `keys`) anytime for the full shell cheatsheet
+cc <name> spawns a Claude agent in its own git worktree + tmux window
+ccd (or tmux prefix A) opens the agent dashboard: live preview, jump, kill, new
+the tmux status bar tallies agents: ⏸ waiting-for-you, 🤖 working, ✅ done
+coach shows which power-features you haven't tried; learn gives an interactive tour
+in the agent dashboard, type a name and press ctrl-n to spawn a new agent

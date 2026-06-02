@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Live agent tally for the tmux status bar. Counts windows by their @cc_status
+# (set by claude/hooks/cc-status.sh). Prints e.g. "⏸1 🤖2 ✅1" — waiting first,
+# so a blocked agent is the first thing you see. Empty when nothing's running.
+working=0 waiting=0 done=0
+while IFS= read -r s; do
+  case "$s" in
+    working) working=$((working + 1)) ;;
+    waiting) waiting=$((waiting + 1)) ;;
+    done)    done=$((done + 1)) ;;
+  esac
+done < <(tmux list-windows -a -F '#{@cc_status}' 2>/dev/null)
+
+out=""
+(( waiting )) && out+="#[fg=#e0af68,bold]⏸${waiting}#[default] "
+(( working )) && out+="#[fg=#7dcfff]🤖${working}#[default] "
+(( done ))    && out+="#[fg=#9ece6a]✅${done}#[default] "
+printf '%s' "$out"

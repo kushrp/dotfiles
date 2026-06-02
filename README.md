@@ -179,6 +179,34 @@ keystroke away everywhere:
   `… | llm '…'` pipes anything to Claude. Backed by `llm` + `llm-anthropic`
   (set `ANTHROPIC_API_KEY` in `~/.extra` or run `llm keys set anthropic`).
 
+## Parallel Claude Code agents
+
+Run many agents at once, each isolated, and see/control them from one place:
+
+- **`cc <name> [prompt]`** — spawn a Claude agent in its own git worktree +
+  tmux window (native `claude --worktree`; branches off main, never merges, so
+  it's Graphite-safe). `ccls` lists them, `ccrm <name>` removes one.
+- **`ccd` / `prefix A`** — the agent dashboard: every session/window with a
+  live output preview + git status, sorted so a blocked agent floats to the
+  top. `enter` jump · `^x` kill · `^g` lazygit · `^n` new (type a name first)
+  · `^r` refresh.
+- **Status at a glance** — a Claude hook (`cc-status.sh`) tags each window
+  ⏸ waiting-for-you / 🤖 working / ✅ done; the tmux window list shows the glyph
+  and the status bar tallies them live (`cc-agent-count`). A desktop
+  notification fires when an agent needs you or finishes.
+- **`prefix T`** (sesh) — fuzzy-jump between agent sessions/worktrees.
+
+## Learning it (coach + tour)
+
+The setup teaches itself:
+
+- **`coach`** — a scorecard of the power-features, marking what you've used and
+  nudging what you haven't (a `preexec` hook tracks usage automatically).
+- **`learn`** — an interactive, paced tour: each feature explained with a
+  command to try, marked off as you go.
+- **Tip-of-the-day** — every new shell nudges one feature you haven't tried yet
+  (falls back to random tips once you've used them all).
+
 ## Shell startup speed
 
 Warm `zsh` startup is ~**0.2s** despite loading mise, starship, atuin,

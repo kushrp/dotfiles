@@ -303,32 +303,26 @@ setup_bin() {
 }
 
 setup_claude() {
-  log "Claude Code (statusline, notify hook, global CLAUDE.md)"
+  log "Claude Code (statusline, agent-status hooks, global CLAUDE.md)"
   mkdir -p "$HOME/.claude/hooks"
   link_file "$DOTFILES/claude/statusline.sh"        "$HOME/.claude/statusline.sh"
-  link_file "$DOTFILES/claude/hooks/notify-stop.sh" "$HOME/.claude/hooks/notify-stop.sh"
+  link_file "$DOTFILES/claude/hooks/cc-status.sh"   "$HOME/.claude/hooks/cc-status.sh"
   link_file "$DOTFILES/claude/CLAUDE.md"            "$HOME/.claude/CLAUDE.md"
+  # Retire the old notify-stop hook (superseded by cc-status.sh).
+  [[ -L "$HOME/.claude/hooks/notify-stop.sh" ]] && rm -f "$HOME/.claude/hooks/notify-stop.sh"
 
-  # ~/.claude/settings.json is Claude-managed + machine-specific (plugins, etc),
-  # so we don't symlink it — we idempotently inject just the statusLine + Stop
-  # hook wiring with jq, backing up first.
+  # settings.json is Claude-managed + machine-specific, so we don't symlink it —
+  # wire-settings.py idempotently sets statusLine + the cc-status agent hooks,
+  # preserving any other hooks. Back it up first.
   local s="$HOME/.claude/settings.json"
-  if ! command -v jq >/dev/null 2>&1; then
-    warn "jq missing — add statusLine + Stop hook to $s manually"
+  if ! command -v python3 >/dev/null 2>&1; then
+    warn "python3 missing — run claude/wire-settings.py against $s manually"
     return
   fi
-  [[ -f "$s" ]] || echo '{}' > "$s"
-  ensure_backup_dir; cp "$s" "$BACKUP_DIR/claude-settings.json" 2>/dev/null
-  local tmp; tmp="$(mktemp)"
-  jq '
-    .statusLine = { "type": "command", "command": "~/.claude/statusline.sh" }
-    | .hooks = (.hooks // {})
-    | .hooks.Stop = ((.hooks.Stop // [])
-        | if any(.[]; (.hooks // []) | any(.command == "~/.claude/hooks/notify-stop.sh"))
-          then . else . + [ { "hooks": [ { "type": "command", "command": "~/.claude/hooks/notify-stop.sh" } ] } ] end)
-  ' "$s" > "$tmp" 2>/dev/null && mv "$tmp" "$s" \
-    && ok "settings.json: statusLine + Stop notify wired" \
-    || { rm -f "$tmp"; fail "jq-merge ~/.claude/settings.json"; }
+  [[ -f "$s" ]] && { ensure_backup_dir; cp "$s" "$BACKUP_DIR/claude-settings.json" 2>/dev/null; }
+  python3 "$DOTFILES/claude/wire-settings.py" "$s" >/dev/null \
+    && ok "settings.json: statusLine + agent-status hooks wired" \
+    || fail "wire-settings.py"
 }
 
 setup_tmux() {

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# cc-learn — an interactive, paced tour of this terminal setup. Walks one
+# feature at a time: explains it, gives you a command to try, waits while you
+# try it (or Enter to continue), and marks it learned in the coach scorecard.
+#   learn          full tour
+#   learn next     just the next feature you haven't used yet
+set -o pipefail
+
+b=$'\e[1m'; dim=$'\e[2m'; r=$'\e[0m'
+mag=$'\e[35m'; cyan=$'\e[36m'; grn=$'\e[32m'; yel=$'\e[33m'; blu=$'\e[34m'
+mark() { command -v cc-coach >/dev/null 2>&1 && cc-coach --used "$1" 2>/dev/null; }
+used() { local u="${XDG_CACHE_HOME:-$HOME/.cache}/cc-coach/used"; grep -qxF "$1" "$u" 2>/dev/null; }
+
+# id | title | explanation | try-this
+STEPS=(
+"cc|Parallel agents in worktrees|Run a Claude Code agent in its own git worktree + tmux window. It branches off main and never touches your checkout — land it later with gt.|cc fix-typo \"fix the typo in the README\""
+"ccd|The agent dashboard|One screen with every session/agent, a live preview of each, and its status (⏸ waiting / 🤖 working / ✅ done). enter=jump ^x=kill ^g=lazygit ^n=new ^r=refresh.|ccd        (in tmux: prefix A)"
+"sesh|Jump between agents|sesh fuzzy-jumps to any session, worktree, or recent dir. This is how you bounce between parallel agents.|press: prefix T   (Ctrl-a then T)"
+"ai|AI → a command|Describe what you want; the AI prints the shell command (doesn't run it). Pipe it to a shell or copy it.|ai list the 10 biggest files under this dir"
+"explain|Explain a command|Paste any scary command and get a 5-line plain-English explanation.|explain 'tar -xzf archive.tar.gz -C /tmp'"
+"llm|Pipe anything to AI|Send command output straight to Claude. Great for logs, diffs, errors.|git diff | llm 'review this for bugs'"
+"z|Smart cd|zoxide remembers where you go. 'z foo' jumps to the most-frecent dir matching foo. (cd is zoxide here.)|z dotfiles"
+"lazygit|Git, visually|A full-screen git UI: stage hunks, commit, branch, rebase — all by keyboard.|lg        (in tmux: prefix g for a popup)"
+"tldr|Better man pages|Real examples instead of a wall of text. Aliased to 'help'.|help tar"
+"cheat|The cheatsheet|Everything above, on demand, with your live aliases. Also 'keys'.|cheat"
+)
+
+clear 2>/dev/null
+printf '%s\n' "${mag}${b}  Terminal tour${r} ${dim}— ${#STEPS[@]} features. Enter advances, q quits, s skips a step.${r}"
+printf '%s\n\n' "${dim}  Open a second pane (prefix |) so you can try commands as we go.${r}"
+
+only_next=0; [[ "$1" == "next" ]] && only_next=1
+i=0
+for spec in "${STEPS[@]}"; do
+  IFS='|' read -r id title expl try <<<"$spec"
+  (( only_next )) && used "$id" && continue
+  i=$((i + 1))
+  mk=""; used "$id" && mk=" ${grn}✓ already used${r}"
+  printf '%s\n' "${cyan}${b}  ${i}. ${title}${r}  ${dim}(${id})${r}${mk}"
+  printf '     %s\n' "$expl"
+  printf '     %stry:%s %s%s%s\n' "$yel" "$r" "$grn" "$try" "$r"
+  printf '     %s[Enter] next   [s] skip   [q] quit%s ' "$dim" "$r"
+  read -r ans </dev/tty || ans=q
+  case "$ans" in
+    q|Q) printf '\n  %scome back anytime with %slearn%s. progress saved.%s\n' "$dim" "$cyan" "$dim" "$r"; exit 0 ;;
+    s|S) printf '\n' ; continue ;;
+    *)   mark "$id"; printf '     %s✓ learned%s\n\n' "$grn" "$r" ;;
+  esac
+  (( only_next )) && break
+done
+
+printf '\n%s\n' "${mag}${b}  Tour complete 🚀${r}"
+printf '%s\n' "  ${dim}run ${cyan}coach${dim} for your scorecard, or ${cyan}cheat${dim} for the full reference.${r}"
