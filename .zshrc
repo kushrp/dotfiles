@@ -308,6 +308,53 @@ ccrm() {
     && git -C "$root" branch -D "worktree-$name" 2>/dev/null
   git -C "$root" worktree prune
 }
+# ccland [name] — land a finished agent's worktree as a PR. Run it from inside
+# the worktree (after reviewing), or pass the agent name. Submits via Graphite
+# (gt) when the repo is gt-initialized, else git push + gh pr create. Never
+# touches main; after the PR merges, clean up with `ccrm <name>`.
+ccland() {
+  emulate -L zsh
+  command -v git >/dev/null 2>&1 || return 1
+  local common dir branch short n ans
+  common="$(git rev-parse --git-common-dir 2>/dev/null)" \
+    || { print -u2 "ccland: not in a git repo"; return 1; }
+  common="${common:A}"                       # absolute
+  if [[ -n "$1" ]]; then
+    dir="${common:h}/.claude/worktrees/$1"
+    [[ -d "$dir" ]] || { print -u2 "ccland: no worktree '$1' (see: ccls)"; return 1; }
+  else
+    dir="$(git rev-parse --show-toplevel)"
+  fi
+  branch="$(git -C "$dir" symbolic-ref --quiet --short HEAD)" \
+    || { print -u2 "ccland: detached HEAD in $dir"; return 1; }
+  [[ "$branch" == (main|master) ]] && { print -u2 "ccland: refusing to land the trunk ($branch)"; return 1; }
+  if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then
+    print -u2 "ccland: $dir has uncommitted changes — commit them first."; return 1
+  fi
+  n="$(git -C "$dir" rev-list --count "main..$branch" 2>/dev/null \
+       || git -C "$dir" rev-list --count "origin/HEAD..$branch" 2>/dev/null)"
+  [[ -n "$n" && "$n" != 0 ]] || { print -u2 "ccland: nothing to land — '$branch' has no commits beyond main"; return 1; }
+
+  print -P "%B%F{4}── land $branch ($n commit$( ((n>1)) && echo s )) ──%f%b"
+  git -C "$dir" --no-pager log --oneline "main..$branch" 2>/dev/null | sed 's/^/  /'
+  local how="git push + gh pr create"
+  [[ -f "$common/.graphite_repo_config" ]] && command -v gt >/dev/null 2>&1 && how="Graphite (gt submit)"
+  print -Pn "%F{3}submit via ${how}? (y/N) %f"; read -r ans
+  [[ "$ans" == [yY] ]] || { echo "aborted"; return 1; }
+
+  ( cd "$dir" || exit 1
+    if [[ "$how" == Graphite* ]]; then
+      gt track --parent main 2>/dev/null || true   # tell Graphite the parent (no-op if tracked)
+      gt submit
+    else
+      git push -u origin "$branch" \
+        && { command -v gh >/dev/null 2>&1 && gh pr create --fill --web || print "pushed — open a PR for $branch"; }
+    fi
+  )
+  short="${1:-${branch#worktree-}}"
+  print -P "%F{8}after it merges:%f %F{6}ccrm ${short}%f"
+}
+
 # Central agent dashboard (also `prefix A` in tmux): all sessions + live preview.
 alias ccd='cc-dashboard'
 
@@ -382,6 +429,7 @@ cheat() {
   print -P "  %F{6}z <dir>%f   zoxide jump               %F{6}lg%f        lazygit"
   print -P "%B%F{4}── agents & learning ──%f%b"
   print -P "  %F{6}cc <name>%f spawn agent in a worktree %F{6}ccd%f / prefix A  agent dashboard"
+  print -P "  %F{6}ccland%f    land worktree as a PR (gt) %F{6}ccrm <name>%f remove it after merge"
   print -P "  %F{6}coach%f     what to try next          %F{6}learn%f     interactive tour"
   print -P "%B%F{4}── your aliases ──%f%b  (g = git)"
   alias | sort | sed 's/^/  /' | (bat --style=plain --language=sh --color=always 2>/dev/null || cat)
@@ -413,7 +461,7 @@ alias learn='cc-learn'
 _cc_track() {
   local word="${1%% *}" feat="" used="${XDG_CACHE_HOME:-$HOME/.cache}/cc-coach/used"
   case "$word" in
-    cc) feat=cc ;; ccd|cc-dashboard) feat=ccd ;; ai) feat=ai ;; explain) feat=explain ;;
+    cc) feat=cc ;; ccland) feat=ccland ;; ccd|cc-dashboard) feat=ccd ;; ai) feat=ai ;; explain) feat=explain ;;
     llm) feat=llm ;; z) feat=z ;; lg|lazygit) feat=lazygit ;; tldr|help) feat=tldr ;;
     cheat|keys) feat=cheat ;; nvim|vim) feat=nvim ;; gt) feat=gt ;;
     *) return ;;

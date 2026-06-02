@@ -24,3 +24,5 @@ ccd (or tmux prefix A) opens the agent dashboard: live preview, jump, kill, new
 the tmux status bar tallies agents: ⏸ waiting-for-you, 🤖 working, ✅ done
 coach shows which power-features you haven't tried; learn gives an interactive tour
 in the agent dashboard, type a name and press ctrl-n to spawn a new agent
+ccland (from inside an agent's worktree) submits it as a PR via Graphite; ccrm cleans up after merge
+the cc lifecycle: cc <name> → review → ccland → (merge) → ccrm <name>

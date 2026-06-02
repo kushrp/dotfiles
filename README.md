@@ -185,7 +185,11 @@ Run many agents at once, each isolated, and see/control them from one place:
 
 - **`cc <name> [prompt]`** — spawn a Claude agent in its own git worktree +
   tmux window (native `claude --worktree`; branches off main, never merges, so
-  it's Graphite-safe). `ccls` lists them, `ccrm <name>` removes one.
+  it's Graphite-safe). Runs `--dangerously-skip-permissions` by default
+  (override: `CC_FLAGS= cc <name>`). `ccls` lists them.
+- **Lifecycle:** `cc <name>` → review → **`ccland`** (submits the worktree as a
+  PR via `gt` when the repo is Graphite-initialized, else `git push` + `gh pr
+  create`) → after it merges, **`ccrm <name>`** removes the worktree + branch.
 - **`ccd` / `prefix A`** — the agent dashboard: every session/window with a
   live output preview + git status, sorted so a blocked agent floats to the
   top. `enter` jump · `^x` kill · `^g` lazygit · `^n` new (type a name first)

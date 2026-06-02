@@ -12,6 +12,7 @@ mkdir -p "$(dirname "$USED")"; touch "$USED"
 # id | label | how-to
 FEATURES=(
   "cc|spawn a Claude agent in its own worktree|cc <name> [prompt]"
+  "ccland|land a finished agent's worktree as a PR|ccland   (from inside the worktree)"
   "ccd|the agent control dashboard|ccd   (or tmux: prefix A)"
   "ai|AI suggests a shell command|ai find files over 1GB"
   "explain|AI explains a command|explain 'rsync -aHAX a/ b/'"
