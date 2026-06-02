@@ -90,10 +90,12 @@ repos:
         pass_filenames: true
         always_run: false
 
-      # zsh syntax parse for the shell config files.
+      # zsh syntax parse for the shell config files. Self-skips if zsh isn't
+      # installed (e.g. a Linux box that hasn't run install.sh) and checks each
+      # file individually (`zsh -n` only parses its first arg).
       - id: zsh-syntax
-        name: zsh -n on .zshrc / .zprofile
-        entry: zsh -n
+        name: zsh -n on zsh dotfiles
+        entry: bash -c 'command -v zsh >/dev/null || { echo "(zsh not installed, skipping)"; exit 0; }; rc=0; for f in "$@"; do zsh -n "$f" || rc=1; done; exit $rc' --
         language: system
         files: '^\.(zshrc|zprofile|zlogin|zlogout|zshenv)$'
 
@@ -105,10 +107,12 @@ repos:
         files: '^\.config/ghostty/config$'
 
       # nvim --headless smoke test when the nvim config changes.
-      # `+qa!` exits as soon as init.lua finishes loading.
+      # `+qa!` exits as soon as init.lua finishes loading. macOS has no GNU
+      # `timeout` (coreutils ships `gtimeout`); use whichever exists, else none.
+      # Self-skips if nvim isn't installed.
       - id: nvim-headless
         name: nvim --headless smoke test
-        entry: bash -c 'command -v nvim >/dev/null && timeout 30 nvim --headless "+qa!" || echo "(nvim not installed, skipping)"'
+        entry: bash -c 'command -v nvim >/dev/null || { echo "(nvim not installed, skipping)"; exit 0; }; TO=$(command -v timeout || command -v gtimeout || true); ${TO:+$TO 60} nvim --headless "+qa!"'
         language: system
         files: '^\.config/nvim/.*\.lua$|^\.config/nvim/init\.lua$'
         pass_filenames: false

@@ -89,9 +89,12 @@ jobs:
 
       - name: Verify Neovim launches headless
         run: |
-          # First nvim launch bootstraps lazy.nvim and installs plugins; allow up to 90s.
-          # `+qa!` exits as soon as init.lua + lazy setup finish.
-          timeout 120 nvim --headless '+qa!' || {
+          # First nvim launch bootstraps lazy.nvim and installs plugins.
+          # `+qa!` exits as soon as init.lua + lazy setup finish. macOS has no
+          # GNU `timeout`; coreutils ships it as `gtimeout`. Use whichever exists,
+          # else run without a guard.
+          TO=$(command -v timeout || command -v gtimeout || true)
+          ${TO:+$TO 120} nvim --headless '+qa!' || {
             echo "::error::nvim headless launch failed"
             exit 1
           }
@@ -109,7 +112,8 @@ jobs:
           set -e
           for f in .zshrc .zprofile .gitconfig .aliases .functions .exports \
                    .config/ghostty/config .config/starship.toml .config/nvim \
-                   .config/mods/mods.yml; do
+                   .config/sesh/sesh.toml .config/zsh/tips.txt \
+                   .config/atuin/config.toml .tmux.conf .tmux-cheatsheet.md; do
             target="$(readlink "$HOME/$f")"
             case "$target" in
               "$GITHUB_WORKSPACE"/*) echo "OK  $f -> $target" ;;
@@ -128,10 +132,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install zsh (for the zsh -n syntax hook)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
       - uses: pre-commit/action@v3.0.1
         env:
-          # Skip ghostty + nvim local hooks in CI — those binaries aren't
-          # available on the Linux runner. The macOS job above validates them.
+          # Skip the macOS/tool-specific local hooks on the Linux runner — those
+          # binaries aren't here. The macOS job above validates them for real.
           SKIP: ghostty-validate,nvim-headless,brewfile-syntax
 
   gitleaks:
