@@ -288,6 +288,20 @@ setup_sesh() {
   link_file "$DOTFILES/.config/sesh/sesh.toml" "$HOME/.config/sesh/sesh.toml"
 }
 
+setup_bin() {
+  log "repo scripts → ~/bin"
+  # ~/bin is on $PATH (see .zshrc). Symlink every file in the repo's bin/.
+  [[ -d "$DOTFILES/bin" ]] || return 0
+  mkdir -p "$HOME/bin"
+  local f n=0
+  for f in "$DOTFILES"/bin/*; do
+    [[ -f "$f" ]] || continue
+    link_file "$f" "$HOME/bin/$(basename "$f")"
+    n=$((n + 1))
+  done
+  ok "linked $n script(s)"
+}
+
 setup_claude() {
   log "Claude Code (statusline, notify hook, global CLAUDE.md)"
   mkdir -p "$HOME/.claude/hooks"
@@ -541,6 +555,7 @@ main() {
   setup_ghostty
   setup_starship
   setup_neovim
+  setup_bin
   setup_tmux
   setup_sesh
   setup_llm

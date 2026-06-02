@@ -304,6 +304,8 @@ ccrm() {
     && git -C "$root" branch -D "worktree-$name" 2>/dev/null
   git -C "$root" worktree prune
 }
+# Central agent dashboard (also `prefix A` in tmux): all sessions + live preview.
+alias ccd='cc-dashboard'
 
 # --- History ---------------------------------------------------------------
 HISTFILE="$HOME/.zsh_history"

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# cc-dashboard — central control board for all tmux sessions / parallel agents.
+# One fuzzy screen: every window across every session, a live preview of each
+# pane's output + its git status, and action keys to jump / kill / open lazygit.
+# Bound to `prefix A` (tmux popup) and available as `ccd` in the shell.
+#
+#   enter  jump to that session/window      ctrl-x  kill it
+#   ctrl-g lazygit in its dir               ctrl-r  refresh
+set -o pipefail
+
+_rows() {
+  # field 1 (hidden): session:window target  ·  fields 2+: pretty display
+  tmux list-windows -a \
+    -F '#{session_name}:#{window_index}	#{?window_active,●,○} #{session_name}  #{window_name}  ‹#{pane_current_command}›' \
+    2>/dev/null
+}
+
+_preview() {
+  local target="$1"
+  local path; path=$(tmux display-message -p -t "$target" '#{pane_current_path}' 2>/dev/null)
+  printf '\e[1;34m%s\e[0m\n' "${path/#$HOME/~}"
+  if git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf '\e[36m %s\e[0m\n' "$(git -C "$path" symbolic-ref --quiet --short HEAD 2>/dev/null || echo detached)"
+    git -C "$path" -c color.status=always status -s 2>/dev/null | head -12
+  fi
+  printf '\e[2m── live output ─────────────────────────\e[0m\n'
+  tmux capture-pane -ep -t "$target" 2>/dev/null | sed '/^[[:space:]]*$/d' | tail -40
+}
+
+case "$1" in
+  --rows)    _rows; exit 0 ;;
+  --preview) _preview "$2"; exit 0 ;;
+esac
+
+if [[ -z "$(_rows)" ]]; then
+  echo "No tmux windows yet. Start an agent with:  cc <name>"; sleep 1.6; exit 0
+fi
+
+_rows | fzf --ansi --no-sort --delimiter='\t' --with-nth=2.. \
+  --border-label ' 🤖 agents — enter:jump  ^x:kill  ^g:lazygit  ^r:refresh ' \
+  --preview-window 'right:60%,border-left' \
+  --preview "$0 --preview {1}" \
+  --bind "ctrl-r:reload($0 --rows)" \
+  --bind "ctrl-x:execute-silent(tmux kill-window -t {1})+reload($0 --rows)" \
+  --bind "ctrl-g:execute(p=\$(tmux display-message -p -t {1} '#{pane_current_path}'); tmux display-popup -E -d \"\$p\" -w 90% -h 90% lazygit)" \
+  --bind "enter:become(tmux switch-client -t {1} 2>/dev/null || tmux attach -t {1})"
