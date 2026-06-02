@@ -24,6 +24,8 @@ on:
       - ".zprofile"
       - ".gitconfig"
       - ".config/**"
+      - "bin/**"
+      - "claude/**"
       - ".github/workflows/install.yml"
   pull_request:
     paths:
@@ -34,6 +36,8 @@ on:
       - ".zprofile"
       - ".gitconfig"
       - ".config/**"
+      - "bin/**"
+      - "claude/**"
       - ".github/workflows/install.yml"
   workflow_dispatch:
 
