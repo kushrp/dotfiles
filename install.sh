@@ -283,6 +283,40 @@ setup_zsh_tips() {
   link_file "$DOTFILES/.config/zsh/tips.txt" "$HOME/.config/zsh/tips.txt"
 }
 
+setup_sesh() {
+  log "sesh config"
+  link_file "$DOTFILES/.config/sesh/sesh.toml" "$HOME/.config/sesh/sesh.toml"
+}
+
+setup_claude() {
+  log "Claude Code (statusline, notify hook, global CLAUDE.md)"
+  mkdir -p "$HOME/.claude/hooks"
+  link_file "$DOTFILES/claude/statusline.sh"        "$HOME/.claude/statusline.sh"
+  link_file "$DOTFILES/claude/hooks/notify-stop.sh" "$HOME/.claude/hooks/notify-stop.sh"
+  link_file "$DOTFILES/claude/CLAUDE.md"            "$HOME/.claude/CLAUDE.md"
+
+  # ~/.claude/settings.json is Claude-managed + machine-specific (plugins, etc),
+  # so we don't symlink it — we idempotently inject just the statusLine + Stop
+  # hook wiring with jq, backing up first.
+  local s="$HOME/.claude/settings.json"
+  if ! command -v jq >/dev/null 2>&1; then
+    warn "jq missing — add statusLine + Stop hook to $s manually"
+    return
+  fi
+  [[ -f "$s" ]] || echo '{}' > "$s"
+  ensure_backup_dir; cp "$s" "$BACKUP_DIR/claude-settings.json" 2>/dev/null
+  local tmp; tmp="$(mktemp)"
+  jq '
+    .statusLine = { "type": "command", "command": "~/.claude/statusline.sh" }
+    | .hooks = (.hooks // {})
+    | .hooks.Stop = ((.hooks.Stop // [])
+        | if any(.[]; (.hooks // []) | any(.command == "~/.claude/hooks/notify-stop.sh"))
+          then . else . + [ { "hooks": [ { "type": "command", "command": "~/.claude/hooks/notify-stop.sh" } ] } ] end)
+  ' "$s" > "$tmp" 2>/dev/null && mv "$tmp" "$s" \
+    && ok "settings.json: statusLine + Stop notify wired" \
+    || { rm -f "$tmp"; fail "jq-merge ~/.claude/settings.json"; }
+}
+
 setup_tmux() {
   log "tmux + tpm (plugin manager)"
   local tpm_dir="$HOME/.tmux/plugins/tpm"
@@ -444,7 +478,7 @@ verify_stack() {
     zsh git gh brew bun nvim tmux
     starship zoxide fzf rg fd bat eza
     mise direnv atuin lazygit delta llm
-    navi tldr
+    navi tldr sesh terminal-notifier
     pre-commit gitleaks
   )
   for cmd in "${needed[@]}"; do
@@ -508,8 +542,10 @@ main() {
   setup_starship
   setup_neovim
   setup_tmux
+  setup_sesh
   setup_llm
   setup_zsh_tips
+  setup_claude
   setup_atuin
   setup_precommit
   setup_fzf_keybindings

@@ -1,0 +1,17 @@
+# sesh — smart tmux session manager (joshmedeski/sesh). `prefix T` opens a
+# fuzzy picker over tmux sessions + zoxide dirs + these configs.
+# https://github.com/joshmedeski/sesh
+
+[default_session]
+# When connecting to a dir with no session, start zsh and show git status.
+startup_command = "eza -la --git --icons --group-directories-first || ls -la"
+
+# Pin a couple of always-available sessions. Add more as you like.
+[[session]]
+name = "dotfiles ⚙"
+path = "~/Documents/dotfiles"
+startup_command = "git status -s"
+
+[[session]]
+name = "ask-rogo 🚀"
+path = "~/Documents/ask-rogo"

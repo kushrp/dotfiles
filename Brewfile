@@ -23,6 +23,8 @@ brew "direnv"                        # auto-load .envrc when cd-ing into a proje
 brew "mise"                          # replaces nvm/pyenv/rbenv/asdf; per-project tool versions
 brew "lazygit"                       # full-screen git TUI
 brew "git-delta"                     # syntax-highlighted git diffs
+brew "sesh"                          # smart tmux session manager (prefix T) — jump between agent worktrees
+brew "terminal-notifier"             # macOS notifications (Claude Code finish hook)
 
 # --- Learning / discoverability ----------------------------------------------
 brew "navi"                # Ctrl-G interactive cheatsheet → inserts an editable command

@@ -265,6 +265,46 @@ _ai_suggest_widget() {
 zle -N _ai_suggest_widget
 bindkey '^X^A' _ai_suggest_widget
 
+# --- 7b. Parallel Claude Code agents in git worktrees ----------------------
+# Leaner replacement for workmux: lean on Claude Code's native `--worktree`
+# (branches off origin/HEAD = main, never merges/pushes — safe with Graphite)
+# and tmux + sesh for navigation. One agent per worktree, land via `gt`.
+#
+#   cc <name> [prompt…]   spawn a Claude agent in a fresh worktree + tmux window
+#   ccls                  list this repo's agent worktrees
+#   ccrm <name>           remove a finished worktree + its branch (after landing)
+#   prefix T  (in tmux)   fuzzy-jump between all agent sessions/dirs (sesh)
+cc() {
+  emulate -L zsh
+  local name="$1"; shift
+  [[ -n "$name" ]] || { print -u2 "usage: cc <name> [prompt…]"; return 2; }
+  command -v claude >/dev/null 2>&1 || { print -u2 "cc: claude not installed"; return 1; }
+  local root; root=$(git rev-parse --show-toplevel 2>/dev/null) \
+    || { print -u2 "cc: not in a git repo"; return 1; }
+  local repo=${root:t}
+  # claude -w creates the worktree off origin/HEAD and starts the session there.
+  # We own the tmux part (Ghostty, not iTerm2), so don't use claude's --tmux.
+  if [[ -n "$TMUX" ]]; then
+    tmux new-window -n "$name" -c "$root" "claude --worktree '$name' $*"
+  else
+    tmux new-session -A -s "$repo" -n "$name" -c "$root" "claude --worktree '$name' $*"
+  fi
+}
+ccls() {
+  local root; root=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  git -C "$root" worktree list
+}
+ccrm() {
+  emulate -L zsh
+  local name="$1"; shift
+  [[ -n "$name" ]] || { print -u2 "usage: ccrm <name> [--force]"; return 2; }
+  local root; root=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  # Claude names worktrees under .claude/worktrees/<name> on branch worktree-<name>.
+  git -C "$root" worktree remove ".claude/worktrees/$name" "$@" \
+    && git -C "$root" branch -D "worktree-$name" 2>/dev/null
+  git -C "$root" worktree prune
+}
+
 # --- History ---------------------------------------------------------------
 HISTFILE="$HOME/.zsh_history"
 HISTSIZE=100000
