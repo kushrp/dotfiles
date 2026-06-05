@@ -48,7 +48,9 @@ window-save-state = always
 # Don't prompt when closing a pane/window.
 confirm-close-surface = false
 # Quit Ghostty entirely when the last window closes.
-quit-after-last-window-closed = true
+# Stay resident in the background after the last window closes, so the global
+# quick-terminal hotkey works anytime from any app (Quake/iTrm-style dropdown).
+quit-after-last-window-closed = false
 # Notify on new stable releases without auto-installing them.
 auto-update = check
 auto-update-channel = stable
@@ -103,5 +105,7 @@ keybind = super+zero=reset_font_size
 keybind = cmd+r=reload_config
 # cmd+k : clear screen + scrollback
 keybind = cmd+k=clear_screen
-# cmd+grave (the ` key) : toggle the global dropdown quick terminal
-keybind = global:cmd+grave_accent=toggle_quick_terminal
+# ctrl+grave (Ctrl+`) : toggle the global dropdown quick terminal from ANY app.
+# Ctrl+` (not Cmd+`) because macOS uses Cmd+` to cycle app windows — that's why
+# Cmd+` was opening a new window instead of the dropdown.
+keybind = global:ctrl+grave_accent=toggle_quick_terminal
