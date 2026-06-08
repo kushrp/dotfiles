@@ -137,6 +137,29 @@ install_package_manager() {
   esac
 }
 
+# Re-link any Brewfile formula that is installed but failed to symlink into
+# the brew prefix because another formula/cask already owns a target path.
+# Detected via `brew bundle check --verbose` ("→ Formula X needs to be
+# linked."), fixed with `brew link --overwrite`. No-op when everything links
+# cleanly, so it's safe on a fresh machine too.
+relink_unlinked_formulae() {
+  local brewfile="$1" f
+  command -v brew >/dev/null 2>&1 || return 0
+  [[ -f "$brewfile" ]] || return 0
+  local -a relinked=()
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    if brew link --overwrite "$f" >/dev/null 2>&1; then
+      relinked+=("$f")
+    else
+      fail "brew link --overwrite $f (still conflicting; see: brew link --overwrite --dry-run $f)"
+    fi
+  done < <(brew bundle check --verbose --file="$brewfile" 2>/dev/null \
+             | sed -n 's/^→ Formula \(.*\) needs to be linked\.$/\1/p')
+  (( ${#relinked[@]} )) && ok "re-linked conflicting formulae: ${relinked[*]}"
+  return 0
+}
+
 install_packages() {
   (( SKIP_BREW )) && return
   case "$OS" in
@@ -151,21 +174,40 @@ install_packages() {
         sudo -v || warn "sudo cache failed; some casks may need manual install"
       fi
 
+      # Resolve the effective Brewfile to a real path (a temp file when
+      # --no-casks strips cask lines) so the same file can be reused for both
+      # `brew bundle` and the post-install relink check below.
+      local brewfile="$DOTFILES/Brewfile"
       if (( SKIP_CASKS )); then
-        # Filter out cask lines on the fly so we only install formulae.
+        brewfile="$(mktemp -t Brewfile.nocask)"
+        grep -v '^[[:space:]]*cask ' "$DOTFILES/Brewfile" > "$brewfile"
         log "brew bundle (formulae only, --no-casks)"
-        grep -v '^[[:space:]]*cask ' "$DOTFILES/Brewfile" \
-          | brew bundle --file=- \
-          || fail "brew bundle formulae (see output above)"
       else
         log "brew bundle (Brewfile)"
-        brew bundle --file="$DOTFILES/Brewfile" \
-          || fail "brew bundle (some entries failed; see output above)"
       fi
+      # brew bundle returns non-zero when a formula builds but fails to *link*
+      # (an existing file — often owned by a GUI app/cask, e.g. Docker Desktop
+      # owning the docker completions — occupies a target path). The bottle is
+      # installed, so recover by re-linking with --overwrite, then re-check;
+      # only record a failure if the Brewfile is still unsatisfied afterwards.
+      brew bundle --file="$brewfile"; local bundle_rc=$?
+      relink_unlinked_formulae "$brewfile"
+      if (( bundle_rc != 0 )); then
+        if brew bundle check --file="$brewfile" >/dev/null 2>&1; then
+          ok "brew bundle satisfied after relinking conflicting formulae"
+        else
+          fail "brew bundle (unsatisfied after relink; see output above)"
+        fi
+      fi
+      [[ "$brewfile" != "$DOTFILES/Brewfile" ]] && rm -f "$brewfile"
+
       if [[ -f "$DOTFILES/Brewfile.local" ]]; then
         log "brew bundle (Brewfile.local)"
-        brew bundle --file="$DOTFILES/Brewfile.local" \
-          || fail "brew bundle Brewfile.local"
+        brew bundle --file="$DOTFILES/Brewfile.local"; local local_rc=$?
+        relink_unlinked_formulae "$DOTFILES/Brewfile.local"
+        if (( local_rc != 0 )) && ! brew bundle check --file="$DOTFILES/Brewfile.local" >/dev/null 2>&1; then
+          fail "brew bundle Brewfile.local (unsatisfied after relink)"
+        fi
       fi
       ;;
     linux)
@@ -248,6 +290,7 @@ setup_ghostty() {
 setup_starship() {
   log "Starship config"
   link_file "$DOTFILES/.config/starship.toml" "$HOME/.config/starship.toml"
+  ok "linked → ~/.config/starship.toml"
 }
 
 setup_neovim() {
@@ -281,11 +324,13 @@ setup_llm() {
 setup_zsh_tips() {
   log "zsh tips file"
   link_file "$DOTFILES/.config/zsh/tips.txt" "$HOME/.config/zsh/tips.txt"
+  ok "linked → ~/.config/zsh/tips.txt"
 }
 
 setup_sesh() {
   log "sesh config"
   link_file "$DOTFILES/.config/sesh/sesh.toml" "$HOME/.config/sesh/sesh.toml"
+  ok "linked → ~/.config/sesh/sesh.toml"
 }
 
 setup_bin() {
@@ -356,6 +401,7 @@ setup_atuin() {
   # atuin writes a default config on first run. Back it up and replace with
   # ours (which disables the startup network update-check).
   link_file "$DOTFILES/.config/atuin/config.toml" "$HOME/.config/atuin/config.toml"
+  ok "linked → ~/.config/atuin/config.toml"
 }
 
 setup_precommit() {
@@ -385,9 +431,12 @@ setup_mise_default_node() {
   # Opt in to .nvmrc / .python-version / .ruby-version / .go-version /
   # .terraform-version reading. By default mise only reads .tool-versions
   # and .mise.toml, which silently breaks repos that ship .nvmrc.
+  # NB: check the command's own exit status. mise is quiet on success and
+  # prints to stderr on failure, so a `| grep` pipeline here inverts the
+  # result (grep exits non-zero on the empty success output → false warning).
   if ! mise settings set idiomatic_version_file_enable_tools \
-       "node,python,ruby,go,terraform" 2>&1 | grep -v '^$'; then
-    warn "mise settings set failed (above)"
+       "node,python,ruby,go,terraform"; then
+    warn "mise settings set idiomatic_version_file_enable_tools failed"
   fi
 
   # mise refuses to load config files it hasn't been told to trust. Trust
