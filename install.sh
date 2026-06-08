@@ -305,9 +305,11 @@ setup_bin() {
 setup_claude() {
   log "Claude Code (statusline, agent-status hooks, global CLAUDE.md)"
   mkdir -p "$HOME/.claude/hooks"
-  link_file "$DOTFILES/claude/statusline.sh"        "$HOME/.claude/statusline.sh"
-  link_file "$DOTFILES/claude/hooks/cc-status.sh"   "$HOME/.claude/hooks/cc-status.sh"
-  link_file "$DOTFILES/claude/CLAUDE.md"            "$HOME/.claude/CLAUDE.md"
+  link_file "$DOTFILES/claude/statusline.sh"                  "$HOME/.claude/statusline.sh"
+  link_file "$DOTFILES/claude/hooks/cc-status.sh"             "$HOME/.claude/hooks/cc-status.sh"
+  link_file "$DOTFILES/claude/hooks/handoff-threshold-stop.py" "$HOME/.claude/hooks/handoff-threshold-stop.py"
+  link_file "$DOTFILES/claude/hooks/handoff-sessionstart.py"   "$HOME/.claude/hooks/handoff-sessionstart.py"
+  link_file "$DOTFILES/claude/CLAUDE.md"                      "$HOME/.claude/CLAUDE.md"
   # Retire the old notify-stop hook (superseded by cc-status.sh).
   [[ -L "$HOME/.claude/hooks/notify-stop.sh" ]] && rm -f "$HOME/.claude/hooks/notify-stop.sh"
 
@@ -323,6 +325,11 @@ setup_claude() {
   python3 "$DOTFILES/claude/wire-settings.py" "$s" >/dev/null \
     && ok "settings.json: statusLine + agent-status hooks wired" \
     || fail "wire-settings.py"
+  # Separately wire the token-threshold handoff hooks (Stop + SessionStart/clear),
+  # idempotently and without clobbering the hooks wire-settings.py just added.
+  python3 "$DOTFILES/claude/wire-handoff.py" "$s" >/dev/null \
+    && ok "settings.json: handoff Stop + SessionStart(clear) hooks wired" \
+    || fail "wire-handoff.py"
 }
 
 setup_tmux() {
