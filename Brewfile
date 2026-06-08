@@ -79,9 +79,8 @@ brew "redis"
 
 # --- Container/VM tooling ---------------------------------------------------
 brew "colima"
-brew "docker"
+brew "docker"            # ships its own shell completions (docker-completion is deprecated upstream)
 brew "docker-compose"
-brew "docker-completion"
 brew "lima"
 
 # --- Secrets / crypto --------------------------------------------------------
