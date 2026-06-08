@@ -154,7 +154,11 @@ export FZF_DEFAULT_OPTS='--height=40% --layout=reverse --border --color=fg:#c0ca
 # zsh-autosuggestions: gray inline ghost-text from history.
 if [[ -r "$BREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]]; then
   source "$BREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
-  ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+  # history only — the `completion` strategy conflicts with fzf-tab (loaded above):
+  # its async worker runs fzf-tab's completion hooks, which emit escape sequences
+  # that corrupt the screen. Surfaces when typing novel args (e.g. a `cc` prompt)
+  # that history can't suggest, so it falls through to completion.
+  ZSH_AUTOSUGGEST_STRATEGY=(history)
   ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=#565f89'   # tokyo-night comment color
   ZSH_AUTOSUGGEST_USE_ASYNC=1
 fi
@@ -270,39 +274,45 @@ bindkey '^X^A' _ai_suggest_widget
 # (branches off origin/HEAD = main, never merges/pushes — safe with Graphite)
 # and tmux + sesh for navigation. One agent per worktree, land via `gt`.
 #
-#   cc <name> [prompt…]   spawn a Claude agent in a fresh worktree + tmux window
-#   ccls                  list this repo's agent worktrees
+#   cc <name>             spawn a Claude agent in a fresh worktree + tmux window
+#                          (type your prompt in Claude once it opens)
+#   ccls                  list agent worktrees
 #   ccrm <name>           remove a finished worktree + its branch (after landing)
-#   prefix T  (in tmux)   fuzzy-jump between all agent sessions/dirs (sesh)
+#   ccd  /  prefix a      the agent dashboard — jump between running agents
+# Repo the worktrees are cut from. Defaults to ask-rogo so `cc <name>` works from
+# anywhere (no need to cd in first); override per call or in env:
+#   CC_REPO=~/code/other cc <name>
+: ${CC_REPO:=$HOME/Documents/ask-rogo}
 # Flags every spawned agent runs with. Worktrees are isolated, so agents run
 # autonomously (--dangerously-skip-permissions) by default — override per call:
 #   CC_FLAGS= cc <name>            (run WITH permission prompts)
 : ${CC_FLAGS:=--dangerously-skip-permissions}
 cc() {
   emulate -L zsh
-  local name="$1"; shift
-  [[ -n "$name" ]] || { print -u2 "usage: cc <name> [prompt…]"; return 2; }
+  local name="$1"
+  [[ -n "$name" ]] || { print -u2 "usage: cc <name>"; return 2; }
   command -v claude >/dev/null 2>&1 || { print -u2 "cc: claude not installed"; return 1; }
-  local root; root=$(git rev-parse --show-toplevel 2>/dev/null) \
-    || { print -u2 "cc: not in a git repo"; return 1; }
+  local root; root=$(git -C "$CC_REPO" rev-parse --show-toplevel 2>/dev/null) \
+    || { print -u2 "cc: CC_REPO ('$CC_REPO') is not a git repo"; return 1; }
   local repo=${root:t}
   # claude -w creates the worktree off origin/HEAD and starts the session there.
   # We own the tmux part (Ghostty, not iTerm2), so don't use claude's --tmux.
   if [[ -n "$TMUX" ]]; then
-    tmux new-window -n "$name" -c "$root" "claude --worktree '$name' ${CC_FLAGS} $*"
+    tmux new-window -n "$name" -c "$root" "claude --worktree '$name' ${CC_FLAGS}"
   else
-    tmux new-session -A -s "$repo" -n "$name" -c "$root" "claude --worktree '$name' ${CC_FLAGS} $*"
+    tmux new-session -A -s "$repo" -n "$name" -c "$root" "claude --worktree '$name' ${CC_FLAGS}"
   fi
 }
 ccls() {
-  local root; root=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  local root; root=$(git -C "$CC_REPO" rev-parse --show-toplevel 2>/dev/null) || return 1
   git -C "$root" worktree list
 }
 ccrm() {
   emulate -L zsh
-  local name="$1"; shift
+  local name="$1"
   [[ -n "$name" ]] || { print -u2 "usage: ccrm <name> [--force]"; return 2; }
-  local root; root=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  shift
+  local root; root=$(git -C "$CC_REPO" rev-parse --show-toplevel 2>/dev/null) || return 1
   # Claude names worktrees under .claude/worktrees/<name> on branch worktree-<name>.
   git -C "$root" worktree remove ".claude/worktrees/$name" "$@" \
     && git -C "$root" branch -D "worktree-$name" 2>/dev/null
@@ -409,9 +419,23 @@ bindkey '^[[A' up-line-or-beginning-search
 bindkey '^[[B' down-line-or-beginning-search
 bindkey '^[OA' up-line-or-beginning-search
 bindkey '^[OB' down-line-or-beginning-search
+# Left/right in BOTH normal (^[[C/D) and application-cursor (^[OC/D) modes. A
+# full-screen program (or a paste) that leaves the terminal in DECCKM otherwise
+# kills left/right while up/down keep working, since only ^[OA/^[OB were bound.
+bindkey '^[[C' forward-char
+bindkey '^[[D' backward-char
+bindkey '^[OC' forward-char
+bindkey '^[OD' backward-char
 # Ctrl-arrow: jump by word (Ghostty sends these escape sequences).
 bindkey '^[[1;5C' forward-word
 bindkey '^[[1;5D' backward-word
+# zsh picks vi insert mode here because $EDITOR is nvim, and vi-backward-delete-char
+# won't delete past where the current insert/paste began — so backspace stops
+# partway through a pasted block. Bind the unrestricted deleters in viins.
+bindkey -M viins '^?' backward-delete-char
+bindkey -M viins '^H' backward-delete-char
+bindkey -M viins '^W' backward-kill-word
+bindkey -M viins '^U' backward-kill-line
 
 # --- 8. Cheatsheets & learning ---------------------------------------------
 # `cheat` (alias `keys`) — on-demand, colorized cheatsheet of the whole setup.
