@@ -3,7 +3,7 @@
 # One fuzzy screen: every window across every session, each tagged with its
 # Claude agent state (⏸ waiting / 🤖 working / ✅ done — from cc-status.sh),
 # waiting agents sorted to the top, a live preview of the pane + git status,
-# and action keys. Bound to `prefix A` (tmux popup) and `ccd` in the shell.
+# and action keys. Bound to `prefix a` (tmux popup) and `ccd` in the shell.
 #
 #   enter  jump        ctrl-x  kill        ctrl-g  lazygit
 #   ctrl-n new agent (type a name first)   ctrl-r  refresh
@@ -14,18 +14,29 @@ _glyph() { case "$1" in waiting) printf '⏸';; working) printf '🤖';; done) p
 _rank()  { case "$1" in waiting) printf 0;; working) printf 1;; done) printf 2;; *) printf 3;; esac; }
 
 _rows() {
-  # rank \t target \t glyph session/window ‹cmd›   — sort by rank, hide cols 1-2
-  while IFS=$'\t' read -r target st name cmd; do
-    printf '%s\t%s\t%s %s  ‹%s›\n' "$(_rank "$st")" "$target" "$(_glyph "$st")" "$name" "$cmd"
-  done < <(tmux list-windows -a \
-      -F '#{session_name}:#{window_index}	#{?#{@cc_status},#{@cc_status},none}	#{session_name}  #{window_name}	#{pane_current_command}' 2>/dev/null) \
-    | sort -t$'\t' -k1,1n
+  # rank \t target(pane) \t glyph session:win.pane ‹title›   — agent PANES only,
+  # sorted by rank. Pane-scoped because agents commonly run as split panes in one
+  # window; a window listing would collapse them to a single row. A pane is an
+  # "agent" if cc-status tagged it, OR it runs claude/node (claude renames its
+  # process to its version, e.g. 2.1.161), OR its path is under a
+  # .claude/worktrees/ tree. Falls back to all panes if none match.
+  local target st name cmd path title label row agents="" all=""
+  while IFS=$'\t' read -r target st name cmd path title; do
+    label="${title:-$cmd}"
+    row=$(printf '%s\t%s\t%s %s  ‹%s›' "$(_rank "$st")" "$target" "$(_glyph "$st")" "$name" "$label")
+    all+="$row"$'\n'
+    if [[ "$st" != none || "$cmd" == claude || "$cmd" == node || "$cmd" == [0-9]*.[0-9]* || "$path" == *"/.claude/worktrees/"* ]]; then
+      agents+="$row"$'\n'
+    fi
+  done < <(tmux list-panes -a \
+      -F '#{session_name}:#{window_index}.#{pane_index}	#{?#{@cc_status},#{@cc_status},none}	#{session_name}:#{window_index}.#{pane_index}	#{pane_current_command}	#{pane_current_path}	#{pane_title}' 2>/dev/null)
+  printf '%s' "${agents:-$all}" | sort -t$'\t' -k1,1n
 }
 
 _preview() {
   local target="$1"
   local path; path=$(tmux display-message -p -t "$target" '#{pane_current_path}' 2>/dev/null)
-  local st;   st=$(tmux show-options -wqv -t "$target" @cc_status 2>/dev/null)
+  local st;   st=$(tmux show-options -pqv -t "$target" @cc_status 2>/dev/null)
   printf '\e[1;34m%s\e[0m   \e[33m%s\e[0m\n' "${path/#$HOME/~}" "${st:+[$st]}"
   if git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     printf '\e[36m %s\e[0m\n' "$(git -C "$path" symbolic-ref --quiet --short HEAD 2>/dev/null || echo detached)"
@@ -41,16 +52,28 @@ case "$1" in
 esac
 
 if [[ -z "$(_rows)" ]]; then
-  echo "No tmux windows yet. Start an agent with:  cc <name>"; sleep 1.6; exit 0
+  echo "No agents yet. Start one with:  cc <name>   (or run claude in a pane)"; sleep 1.6; exit 0
 fi
 
-# ctrl-n: spawn `cc`-style from the typed query {q} (a new agent worktree+window).
+# enter jumps to the exact pane, across any window/session: select the pane +
+# window, then point the client at its session. When launched from a tmux
+# keybinding/popup, $1 is the invoking client — a popup runs in its own throwaway
+# client, so we must retarget THAT one with -c, else the jump lands nowhere.
+client="$1"
+if [[ -n "$client" ]]; then
+  jump="tmux select-pane -t {2} 2>/dev/null; tmux select-window -t {2} 2>/dev/null; tmux switch-client -c '$client' -t {2}"
+else
+  jump="tmux select-pane -t {2} 2>/dev/null; tmux select-window -t {2} 2>/dev/null; tmux switch-client -t {2} 2>/dev/null || tmux attach -t {2}"
+fi
+
+# ctrl-x kills just that PANE, never the whole window — sibling agents share it.
+# ctrl-n spawns a fresh `cc`-style agent window.
 _rows | fzf --ansi --no-sort --delimiter='\t' --with-nth=3.. \
   --border-label ' 🤖 agents — enter:jump  ^x:kill  ^g:lazygit  ^n:new  ^r:refresh ' \
   --preview-window 'right:60%,border-left' \
   --preview "$0 --preview {2}" \
   --bind "ctrl-r:reload($0 --rows)" \
-  --bind "ctrl-x:execute-silent(tmux kill-window -t {2})+reload($0 --rows)" \
+  --bind "ctrl-x:execute-silent(tmux kill-pane -t {2})+reload($0 --rows)" \
   --bind "ctrl-g:execute(p=\$(tmux display-message -p -t {2} '#{pane_current_path}'); tmux display-popup -E -d \"\$p\" -w 90% -h 90% lazygit)" \
   --bind "ctrl-n:execute(name={q}; [ -n \"\$name\" ] && tmux new-window -n \"\$name\" \"claude --worktree '\$name' --dangerously-skip-permissions\")+abort" \
-  --bind "enter:become(tmux switch-client -t {2} 2>/dev/null || tmux attach -t {2})"
+  --bind "enter:become($jump)"

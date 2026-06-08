@@ -17,12 +17,34 @@ cwd="$(printf '%s' "$input" | jq -r '.cwd // .workspace.current_dir // empty' 2>
 [ -n "$cwd" ] || cwd="$PWD"
 proj="${cwd##*/}"
 
-# Per-window status flag (only meaningful inside tmux).
+# Per-PANE status flag (only meaningful inside tmux). Pane-scoped, not
+# window-scoped: several agents commonly run as split panes in one window, and a
+# window option would let them clobber each other (and inheritance would make
+# unset panes read a sibling's value). cc-agent-count / cc-dashboard read this
+# per pane. The default target pane comes from $TMUX_PANE, set by the hook's
+# parent (claude), so no -t is needed.
 if [ -n "$TMUX" ]; then
   if [ "$state" = "clear" ]; then
-    tmux set-option -uw @cc_status 2>/dev/null
+    tmux set-option -up @cc_status 2>/dev/null
   else
-    tmux set-option -w @cc_status "$state" 2>/dev/null
+    tmux set-option -p @cc_status "$state" 2>/dev/null
+  fi
+  # Roll this window's tab glyph up to its neediest pane (waiting > working >
+  # done). Kept under a SEPARATE name (@cc_win) so it never leaks into the
+  # per-pane @cc_status reads via tmux option inheritance.
+  win="$(tmux display-message -p '#{window_id}' 2>/dev/null)"
+  if [ -n "$win" ]; then
+    roll=""
+    for s in waiting working "done"; do
+      if tmux list-panes -t "$win" -F '#{@cc_status}' 2>/dev/null | grep -qx "$s"; then
+        roll="$s"; break
+      fi
+    done
+    if [ -n "$roll" ]; then
+      tmux set-option -w -t "$win" @cc_win "$roll" 2>/dev/null
+    else
+      tmux set-option -uw -t "$win" @cc_win 2>/dev/null
+    fi
   fi
   tmux refresh-client -S 2>/dev/null   # repaint the status bar now
 fi
