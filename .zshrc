@@ -50,7 +50,7 @@ fi
 BREW_PREFIX="${HOMEBREW_PREFIX:-/opt/homebrew}"
 
 # --- 2. PATH + tool env -----------------------------------------------------
-export PATH="$HOME/bin:$HOME/.local/bin:$HOME/.bun/bin:/Users/kushrustagi/Documents/ask-rogo-crm-v0/node_modules/.bin:$PATH"
+export PATH="$HOME/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 
 # mise — replaces nvm/pyenv/rbenv/asdf. Respects .nvmrc, .tool-versions,
 # .mise.toml. Activation cost: ~5ms vs nvm's ~600ms.
