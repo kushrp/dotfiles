@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Live agent tally for the tmux status bar. Counts windows by their @cc_status
-# (set by claude/hooks/cc-status.sh). Prints e.g. "⏸1 🤖2 ✅1" — waiting first,
-# so a blocked agent is the first thing you see. Empty when nothing's running.
+# Live agent tally for the tmux status bar. Counts PANES by their @cc_status
+# (set per-pane by claude/hooks/cc-status.sh) — agents often run as split panes
+# in one window, so counting windows undercounts. Prints e.g. "◆1 ▸2 ✓1" —
+# waiting first, so a blocked agent is the first thing you see. Empty when idle.
 working=0 waiting=0 done=0
 while IFS= read -r s; do
   case "$s" in
@@ -9,7 +10,7 @@ while IFS= read -r s; do
     waiting) waiting=$((waiting + 1)) ;;
     done)    done=$((done + 1)) ;;
   esac
-done < <(tmux list-windows -a -F '#{@cc_status}' 2>/dev/null)
+done < <(tmux list-panes -a -F '#{@cc_status}' 2>/dev/null)
 
 # Single-width glyphs (◆ waiting / ▸ working / ✓ done) — same as the window
 # tabs; emoji width-counts wrong in tmux status segments. Color carries state.

@@ -13,9 +13,8 @@ used() { local u="${XDG_CACHE_HOME:-$HOME/.cache}/cc-coach/used"; grep -qxF "$1"
 
 # id | title | explanation | try-this
 STEPS=(
-"cc|Parallel agents in worktrees|Run a Claude Code agent in its own git worktree + tmux window. It branches off main and never touches your checkout — land it later with gt.|cc fix-typo \"fix the typo in the README\""
-"ccd|The agent dashboard|One screen with every session/agent, a live preview of each, and its status (⏸ waiting / 🤖 working / ✅ done). enter=jump ^x=kill ^g=lazygit ^n=new ^r=refresh.|ccd        (in tmux: prefix A)"
-"sesh|Jump between agents|sesh fuzzy-jumps to any session, worktree, or recent dir. This is how you bounce between parallel agents.|press: prefix T   (Ctrl-a then T)"
+"cc|Parallel agents in worktrees|Run a Claude Code agent in its own git worktree + tmux window. It branches off main and never touches your checkout — land it later with gt. Type your prompt in Claude once it opens.|cc fix-typo"
+"ccd|The agent dashboard|One screen with every agent pane across all sessions, a live preview of each, and its status (⏸ waiting / 🤖 working / ✅ done). enter=jump ^x=kill ^g=lazygit ^n=new ^r=refresh.|ccd        (in tmux: prefix a, or click the status-bar tally)"
 "ai|AI → a command|Describe what you want; the AI prints the shell command (doesn't run it). Pipe it to a shell or copy it.|ai list the 10 biggest files under this dir"
 "explain|Explain a command|Paste any scary command and get a 5-line plain-English explanation.|explain 'tar -xzf archive.tar.gz -C /tmp'"
 "llm|Pipe anything to AI|Send command output straight to Claude. Great for logs, diffs, errors.|git diff | llm 'review this for bugs'"

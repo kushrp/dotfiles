@@ -10,9 +10,10 @@ Project-level `CLAUDE.md` files always take precedence.
   switching branches in place.
 - **Landing PRs:** in repos that use Graphite (e.g. ask-rogo), land via `gt`
   (`gt create` / `gt submit`), never a raw `git merge`/`git push` to main.
-- **Parallel agents:** I run several Claude Code sessions at once, each in its
-  own worktree (`cc`), and jump between their tmux sessions with `sesh`
-  (`prefix T`). Keep changes scoped to the current worktree.
+- **Parallel agents:** I run several Claude Code sessions at once (often as split
+  panes in one tmux window). The agent dashboard (`ccd` / `prefix a`, or click
+  the status-bar tally) lists them all and jumps between them. Keep changes
+  scoped to the current worktree.
 
 ## Style
 

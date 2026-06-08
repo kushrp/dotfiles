@@ -13,7 +13,7 @@ mkdir -p "$(dirname "$USED")"; touch "$USED"
 FEATURES=(
   "cc|spawn a Claude agent in its own worktree|cc <name> [prompt]"
   "ccland|land a finished agent's worktree as a PR|ccland   (from inside the worktree)"
-  "ccd|the agent control dashboard|ccd   (or tmux: prefix A)"
+  "ccd|the agent control dashboard|ccd   (or tmux: prefix a)"
   "ai|AI suggests a shell command|ai find files over 1GB"
   "explain|AI explains a command|explain 'rsync -aHAX a/ b/'"
   "llm|pipe anything to the AI|cat err.log | llm 'what is wrong?'"
@@ -21,7 +21,6 @@ FEATURES=(
   "lazygit|full-screen git TUI|lg   (or tmux: prefix g)"
   "tldr|real-example man pages|help tar   (alias for tldr)"
   "cheat|the full shell cheatsheet|cheat   (or: keys)"
-  "sesh|fuzzy session/worktree jumper|tmux: prefix T"
   "nvim|the editor (LazyVim)|nvim .   then press <space>"
   "gt|Graphite stacked PRs|gt create / gt submit"
 )
