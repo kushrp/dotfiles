@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stop hook: at a context-token threshold, force a clean handoff.
 
-When the live context window crosses HANDOFF_TOKEN_THRESHOLD (default 250k),
+When the live context window crosses HANDOFF_TOKEN_THRESHOLD (default 500k),
 block the turn from ending and instruct the model to write a thorough handoff
 doc, then ask the user to /clear. A sibling SessionStart hook
 (handoff-sessionstart.py) re-injects that doc into the fresh context.
@@ -16,24 +16,32 @@ purely to detect the threshold and hand the model its instructions.
 Loop-safety: a per-session marker (.pending-<id>) is dropped on first trigger;
 while it exists the hook stays out of the way so the handoff turn itself, and
 any further chatter, can stop normally.
+
+Cross-cwd pickup: besides the repo-local handoff store, we also drop a small
+JSON pointer in a global index (~/.claude/handoff-index) recording this
+handoff's cwd, repo root, and doc path. The pointer is written by the hook (so
+it records the true cwd/repo, not whatever the model's prose happens to say),
+which lets the SessionStart hook find the handoff even when /clear runs from a
+different directory than where the work happened.
 """
-import glob
 import json
 import os
 import subprocess
 import sys
+import time
 
-THRESHOLD = int(os.environ.get("HANDOFF_TOKEN_THRESHOLD", "250000"))
+THRESHOLD = int(os.environ.get("HANDOFF_TOKEN_THRESHOLD", "500000"))
+
+GLOBAL_INDEX = os.path.expanduser("~/.claude/handoff-index")
 
 
-def resolve_handoff_dir(cwd: str) -> str:
-    """One handoff store per repo, shared across all worktrees.
+def git_common_root(cwd: str):
+    """The repo root shared across all worktrees, or None outside a repo.
 
     `git rev-parse --git-common-dir` resolves to the *shared* .git from every
     linked worktree (e.g. .../repo/.git from both repo/ and repo-worktrees/x),
-    so a handoff written in one worktree is found when /clear happens in another.
-    Its parent is the primary worktree root → store under <root>/.claude/handoffs.
-    Falls back to <cwd>/.claude/handoffs outside a git repo.
+    so a handoff written in one worktree is found from another. Its parent is
+    the primary worktree root.
     """
     try:
         out = subprocess.run(
@@ -45,10 +53,40 @@ def resolve_handoff_dir(cwd: str) -> str:
         common = out.stdout.strip()
         if out.returncode == 0 and common:
             common = os.path.abspath(os.path.join(cwd, common))
-            return os.path.join(os.path.dirname(common), ".claude", "handoffs")
+            return os.path.dirname(common)
     except Exception:
         pass
-    return os.path.join(cwd, ".claude", "handoffs")
+    return None
+
+
+def resolve_handoff_dir(cwd: str) -> str:
+    """One handoff store per repo (shared across worktrees), else under cwd.
+
+    Must match handoff-sessionstart.py's resolver.
+    """
+    root = git_common_root(cwd)
+    base = root if root else cwd
+    return os.path.join(base, ".claude", "handoffs")
+
+
+def write_global_pointer(session_id: str, cwd: str, doc_path: str, tokens: int) -> None:
+    """Record where this handoff lives so /clear can find it from any cwd."""
+    pointer = {
+        "session_id": session_id,
+        "cwd": os.path.abspath(cwd),
+        "repo_root": git_common_root(cwd),
+        "doc_path": doc_path,
+        "tokens": tokens,
+        "ts": time.time(),
+    }
+    try:
+        os.makedirs(GLOBAL_INDEX, exist_ok=True)
+        tmp = os.path.join(GLOBAL_INDEX, f".{session_id}.json.tmp")
+        with open(tmp, "w") as f:
+            json.dump(pointer, f)
+        os.replace(tmp, os.path.join(GLOBAL_INDEX, f"{session_id}.json"))
+    except OSError:
+        pass
 
 
 def current_context_tokens(path: str) -> int:
@@ -127,6 +165,7 @@ def main() -> int:
         f.write(str(tokens))
 
     handoff_path = os.path.join(handoff_dir, f"{session_id}.md")
+    write_global_pointer(session_id, cwd, handoff_path, tokens)
     print(
         json.dumps(
             {
