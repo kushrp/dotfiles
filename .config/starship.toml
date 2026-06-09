@@ -8,6 +8,11 @@
 
 add_newline = true
 command_timeout = 800
+# Cap on scanning the cwd for module triggers (lang/tool files). Default 30ms is
+# too tight in big monorepos on a busy machine — raises the "scan timed out"
+# warning. 100ms clears it; it's a ceiling, not a fixed cost (only spent when the
+# scan is actually slow). Bump higher if the warning recurs.
+scan_timeout = 100
 
 format = """
 [](#7aa2f7)\
