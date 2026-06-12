@@ -436,6 +436,11 @@ bindkey -M viins '^?' backward-delete-char
 bindkey -M viins '^H' backward-delete-char
 bindkey -M viins '^W' backward-kill-word
 bindkey -M viins '^U' backward-kill-line
+# Alt/Option+Backspace → delete the previous word. Ghostty (macos-option-as-alt)
+# sends ESC+DEL (^[^?); some terminals send ESC+BS (^[^H). viins binds neither by
+# default, which is why word-delete silently did nothing.
+bindkey -M viins '^[^?' backward-kill-word
+bindkey -M viins '^[^H' backward-kill-word
 
 # --- 8. Cheatsheets & learning ---------------------------------------------
 # `cheat` (alias `keys`) — on-demand, colorized cheatsheet of the whole setup.
