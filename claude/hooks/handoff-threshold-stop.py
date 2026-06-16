@@ -59,6 +59,30 @@ def git_common_root(cwd: str):
     return None
 
 
+def git_worktree_root(cwd: str):
+    """This worktree's own root, or None outside a repo.
+
+    Unlike --git-common-dir (which collapses every linked worktree to the
+    primary checkout), --show-toplevel returns the *current* worktree's root,
+    so two sessions in two worktrees of the same repo get distinct values.
+    This is what lets the loader tell a handoff written in worktree A apart
+    from one written in worktree B even though they share one handoff store.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        top = out.stdout.strip()
+        if out.returncode == 0 and top:
+            return os.path.abspath(top)
+    except Exception:
+        pass
+    return None
+
+
 def resolve_handoff_dir(cwd: str) -> str:
     """One handoff store per repo (shared across worktrees), else under cwd.
 
@@ -75,6 +99,7 @@ def write_global_pointer(session_id: str, cwd: str, doc_path: str, tokens: int) 
         "session_id": session_id,
         "cwd": os.path.abspath(cwd),
         "repo_root": git_common_root(cwd),
+        "worktree": git_worktree_root(cwd),
         "doc_path": doc_path,
         "tokens": tokens,
         "ts": time.time(),
