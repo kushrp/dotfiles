@@ -333,6 +333,27 @@ setup_claude() {
     || fail "wire-handoff.py"
 }
 
+setup_brain() {
+  # The second-brain repo (separate from dotfiles) owns its own hook symlinks +
+  # settings wiring via wire-brain-settings.py: SessionStart knowledge-index inject,
+  # SessionEnd capture, PostToolUse(Read) usage logging, MCP recall. Run it if the
+  # repo is present so a fresh laptop gets the brain hooks too. Optional by design —
+  # a machine without the vault repo just skips it.
+  local brain="$HOME/Documents/second-brain"
+  log "Second brain (knowledge-index + capture hooks)"
+  if [[ ! -f "$brain/wire-brain-settings.py" ]]; then
+    warn "no $brain — clone kushrp/second-brain to enable brain hooks; skipping"
+    return
+  fi
+  command -v python3 >/dev/null 2>&1 || { warn "python3 missing — skipping brain wiring"; return; }
+  python3 "$brain/wire-brain-settings.py" >/dev/null \
+    && ok "second-brain hooks symlinked + wired (index, capture, usage log)" \
+    || fail "wire-brain-settings.py"
+  # Periodic self-healing/synthesis jobs (launchd) are opt-in — they touch the vault
+  # and assume connectors. Enable on a primary machine with:
+  #   python3 ~/Documents/second-brain/install-schedule.py
+}
+
 setup_tmux() {
   log "tmux + tpm (plugin manager)"
   local tpm_dir="$HOME/.tmux/plugins/tpm"
@@ -563,6 +584,7 @@ main() {
   setup_llm
   setup_zsh_tips
   setup_claude
+  setup_brain
   setup_atuin
   setup_precommit
   setup_fzf_keybindings
