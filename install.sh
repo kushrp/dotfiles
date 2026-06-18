@@ -309,6 +309,7 @@ setup_claude() {
   link_file "$DOTFILES/claude/hooks/cc-status.sh"             "$HOME/.claude/hooks/cc-status.sh"
   link_file "$DOTFILES/claude/hooks/handoff-threshold-stop.py" "$HOME/.claude/hooks/handoff-threshold-stop.py"
   link_file "$DOTFILES/claude/hooks/handoff-sessionstart.py"   "$HOME/.claude/hooks/handoff-sessionstart.py"
+  link_file "$DOTFILES/claude/hooks/handoff-block-running-agents.sh" "$HOME/.claude/hooks/handoff-block-running-agents.sh"
   link_file "$DOTFILES/claude/CLAUDE.md"                      "$HOME/.claude/CLAUDE.md"
   # Retire the old notify-stop hook (superseded by cc-status.sh).
   [[ -L "$HOME/.claude/hooks/notify-stop.sh" ]] && rm -f "$HOME/.claude/hooks/notify-stop.sh"
