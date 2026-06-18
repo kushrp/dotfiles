@@ -52,6 +52,10 @@ BREW_PREFIX="${HOMEBREW_PREFIX:-/opt/homebrew}"
 # --- 2. PATH + tool env -----------------------------------------------------
 export PATH="$HOME/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 
+# 1Password CLI — default to the Rogo account so `op` doesn't error on the
+# personal account being present too (`multiple accounts found`).
+export OP_ACCOUNT="rogotechnologiesinc.1password.com"
+
 # mise — replaces nvm/pyenv/rbenv/asdf. Respects .nvmrc, .tool-versions,
 # .mise.toml. Activation cost: ~5ms vs nvm's ~600ms.
 if command -v mise >/dev/null 2>&1; then
@@ -485,6 +489,15 @@ ghostty-keys() {
 # nudges a feature you haven't tried yet.
 alias coach='cc-coach'
 alias learn='cc-learn'
+
+# autopoints: hydrate Browserbase from 1Password without storing plaintext secrets.
+# Lazy: only touch `op` (which triggers a 1Password unlock prompt) on demand,
+# never at shell startup. Call `browserbase-login` before commands that need it.
+browserbase-login() {
+  command -v op >/dev/null 2>&1 || { echo "op (1Password CLI) not found" >&2; return 1; }
+  export BROWSERBASE_API_KEY="${BROWSERBASE_API_KEY:-$(op read --account my.1password.com 'op://Private/Browserbase/api_key' 2>/dev/null)}"
+  export BROWSERBASE_PROJECT_ID="${BROWSERBASE_PROJECT_ID:-$(op read --account my.1password.com 'op://Private/Browserbase/project_id' 2>/dev/null)}"
+}
 
 # Map the first word of each command you run to a tracked feature id.
 _cc_track() {
