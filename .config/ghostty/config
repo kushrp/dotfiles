@@ -39,8 +39,10 @@ unfocused-split-opacity = 0.85
 window-colorspace = display-p3
 
 # --- macOS-specific ----------------------------------------------------------
-# Tab bar lives in the titlebar.
-macos-titlebar-style = tabs
+# Chrome-less: hide the native titlebar so tmux's top status bar IS the window's
+# top edge (no redundant macOS title strip above it). Traffic-light buttons show
+# on hover top-left. Ghostty tabs are unused here since tmux owns multiplexing.
+macos-titlebar-style = hidden
 # Treat right Option as Alt so meta keybinds work in the shell/editor.
 macos-option-as-alt = true
 # Restore window layout on relaunch.
@@ -58,6 +60,11 @@ auto-update-channel = stable
 # --- Cursor ------------------------------------------------------------------
 cursor-style = block
 cursor-style-blink = false
+# Subtle cursor smear/trail (sahaj-b/ghostty-cursor-shaders). Trail color is
+# sampled from the cursor so it follows the theme; 0.09s so it reads as motion,
+# not a gimmick. `animation = always` keeps it smooth while the screen is idle.
+custom-shader = shaders/cursor_tail.glsl
+custom-shader-animation = always
 
 # --- Shell integration -------------------------------------------------------
 # Auto-detect zsh/bash/fish and inject integration.

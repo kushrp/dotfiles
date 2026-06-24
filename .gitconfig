@@ -165,7 +165,7 @@
 	light = false          # we use dark themes everywhere
 	side-by-side = true
 	line-numbers = true
-	syntax-theme = "Monokai Extended Origin"
+	syntax-theme = "tokyonight_night"   # matches the bat/tmux/Ghostty Tokyo Night palette
 
 [help]
 

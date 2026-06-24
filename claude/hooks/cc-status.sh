@@ -29,6 +29,13 @@ if [ -n "$TMUX" ]; then
   else
     tmux set-option -p @cc_status "$state" 2>/dev/null
   fi
+  # Stamp when a pane ENTERS waiting so the bar can show how long it's been
+  # blocked (oldest-wait timer); clear the stamp on any other state.
+  if [ "$state" = "waiting" ]; then
+    tmux set-option -p @cc_waiting_since "$(date +%s)" 2>/dev/null
+  else
+    tmux set-option -up @cc_waiting_since 2>/dev/null
+  fi
   # Roll this window's tab glyph up to its neediest pane (waiting > working >
   # done). Kept under a SEPARATE name (@cc_win) so it never leaks into the
   # per-pane @cc_status reads via tmux option inheritance.

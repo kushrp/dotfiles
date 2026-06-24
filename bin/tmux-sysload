@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Compact machine vitals for the tmux status bar: CPU load (1-min, normalized to
+# core count → a rough % busy) and memory in use. Color-coded green/amber/red so
+# a runaway agent pegging the box is obvious. macOS-only (sysctl + vm_stat).
+
+cores=$(sysctl -n hw.ncpu 2>/dev/null || echo 1)
+# vm.loadavg looks like: { 1.23 1.45 1.67 } — take the 1-minute figure.
+load1=$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')
+cpu=$(awk -v l="${load1:-0}" -v c="$cores" 'BEGIN{ p=(l/c)*100; if(p>999)p=999; printf "%d", p }')
+
+# Memory "in use" = active + wired + compressed, as a % of total pages.
+read -r usedp <<EOF
+$(vm_stat 2>/dev/null | awk '
+  /Pages free/                  {f=$3}
+  /Pages active/                {a=$3}
+  /Pages inactive/              {i=$3}
+  /Pages speculative/           {s=$3}
+  /Pages wired down/            {w=$4}
+  /Pages occupied by compressor/{c=$5}
+  END{
+    gsub(/\./,"",f); gsub(/\./,"",a); gsub(/\./,"",i);
+    gsub(/\./,"",s); gsub(/\./,"",w); gsub(/\./,"",c);
+    t=f+a+i+s+w+c; if(t>0) printf "%d", (a+w+c)*100/t; else printf "0";
+  }')
+EOF
+
+color() {  # $1 = pct → green / amber / red
+  if   (( $1 >= 90 )); then printf '#f7768e'
+  elif (( $1 >= 60 )); then printf '#e0af68'
+  else                      printf '#9ece6a'
+  fi
+}
+
+printf '#[fg=%s]cpu %d#[default] #[fg=%s]ram %d#[default]' \
+  "$(color "${cpu:-0}")" "${cpu:-0}" "$(color "${usedp:-0}")" "${usedp:-0}"

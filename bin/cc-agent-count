@@ -1,21 +1,55 @@
 #!/usr/bin/env bash
-# Live agent tally for the tmux status bar. Counts PANES by their @cc_status
-# (set per-pane by claude/hooks/cc-status.sh) — agents often run as split panes
-# in one window, so counting windows undercounts. Prints e.g. "◆1 ▸2 ✓1" —
-# waiting first, so a blocked agent is the first thing you see. Empty when idle.
-working=0 waiting=0 done=0
-while IFS= read -r s; do
-  case "$s" in
-    working) working=$((working + 1)) ;;
-    waiting) waiting=$((waiting + 1)) ;;
-    done)    done=$((done + 1)) ;;
-  esac
-done < <(tmux list-panes -a -F '#{@cc_status}' 2>/dev/null)
+# Live agent tally for the tmux status bar — the captain's "where do I look"
+# readout. Counts PANES by their @cc_status (set per-pane by cc-status.sh; agents
+# often run as split panes in one window, so counting windows undercounts).
+#
+# Output, waiting first so a blocked agent is the first thing you see:
+#    2 yay ask-rogo 4m     waiting: count · which sessions · oldest wait
+#    1                     working
+#    5                     done
+# Glyphs match the window tabs (Nerd Font:  waiting /  working /  done).
+# Empty when fully idle.
 
-# Single-width glyphs (◆ waiting / ▸ working / ✓ done) — same as the window
-# tabs; emoji width-counts wrong in tmux status segments. Color carries state.
+working=0 waiting=0 done=0
+oldest=0
+now=$(date +%s)
+declare -A wait_sessions
+
+while IFS=$'\t' read -r st sess since; do
+  case "$st" in
+    working) working=$((working + 1)) ;;
+    done)    done=$((done + 1)) ;;
+    waiting)
+      waiting=$((waiting + 1))
+      [ -n "$sess" ] && wait_sessions["$sess"]=1
+      if [[ "$since" =~ ^[0-9]+$ ]]; then
+        age=$((now - since))
+        (( age > oldest )) && oldest=$age
+      fi
+      ;;
+  esac
+done < <(tmux list-panes -a -F '#{@cc_status}'$'\t''#{session_name}'$'\t''#{@cc_waiting_since}' 2>/dev/null)
+
+# Compact human age for the oldest blocked agent.
+fmt_age() {
+  local s=$1
+  (( s <= 0 )) && { printf ''; return; }
+  if   (( s >= 3600 )); then printf '%dh' $(( s / 3600 ))
+  elif (( s >= 60 ));   then printf '%dm' $(( s / 60 ))
+  else                       printf '%ds' "$s"
+  fi
+}
+
 out=""
-(( waiting )) && out+="#[fg=#e0af68,bold]◆${waiting}#[default] "
-(( working )) && out+="#[fg=#7dcfff]▸${working}#[default] "
-(( done ))    && out+="#[fg=#9ece6a]✓${done}#[default] "
+if (( waiting )); then
+  names="${!wait_sessions[*]}"            # unique sessions with a waiting agent
+  age="$(fmt_age "$oldest")"
+  out+="#[fg=#e0af68,bold] ${waiting}#[nobold]"
+  [ -n "$names" ] && out+=" #[fg=#9aa0c0]${names}"
+  [ -n "$age" ]   && out+=" #[fg=#e0af68]${age}"
+  out+="#[default]  "
+fi
+(( working )) && out+="#[fg=#7dcfff] ${working}#[default]  "
+(( done ))    && out+="#[fg=#9ece6a] ${done}#[default]  "
+
 printf '%s' "$out"

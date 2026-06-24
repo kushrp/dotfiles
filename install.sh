@@ -242,7 +242,25 @@ symlink_dotfiles() {
 setup_ghostty() {
   log "Ghostty config"
   link_file "$DOTFILES/.config/ghostty/config" "$HOME/.config/ghostty/config"
-  ok "linked → ~/.config/ghostty/config"
+  # Custom cursor shaders referenced by the config (relative `shaders/...`).
+  link_file "$DOTFILES/.config/ghostty/shaders" "$HOME/.config/ghostty/shaders"
+  ok "linked → ~/.config/ghostty/config (+ shaders)"
+}
+
+setup_bat() {
+  log "bat config + Tokyo Night theme"
+  link_file "$DOTFILES/.config/bat/config" "$HOME/.config/bat/config"
+  link_file "$DOTFILES/.config/bat/themes" "$HOME/.config/bat/themes"
+  # Themes only take effect after the cache is (re)built.
+  command -v bat >/dev/null 2>&1 && bat cache --build >/dev/null 2>&1 \
+    && ok "bat cache built" || warn "bat not installed yet — run 'bat cache --build' later"
+}
+
+setup_lazygit() {
+  log "lazygit Tokyo Night theme"
+  # macOS lazygit reads from ~/Library/Application Support, not XDG.
+  link_file "$DOTFILES/.config/lazygit/config.yml" \
+    "$HOME/Library/Application Support/lazygit/config.yml"
 }
 
 setup_starship() {
@@ -581,6 +599,8 @@ main() {
   setup_bin
   setup_tmux
   setup_sesh
+  setup_bat
+  setup_lazygit
   setup_llm
   setup_zsh_tips
   setup_claude
