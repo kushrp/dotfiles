@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
-# cc-notify — channel-pluggable notification dispatcher for the agent fleet.
-# Called by cc-status.sh (Claude hooks) when an agent changes state. Fans out to:
+# cc-notify — notification dispatcher for the agent fleet. Called by cc-status.sh
+# (Claude hooks) when an agent changes state. Fans out to:
 #   - macOS desktop (terminal-notifier), always, for every notified state
-#   - phone/remote channels (ntfy, Slack), per CC_NOTIFY_PHONE_STATES
-# Every remote message carries the agent's tmux target (session:win.pane) so a
-# future reply-listener can route a response back with `tmux send-keys`.
+#   - Slack and/or Discord webhooks, for states in CC_NOTIFY_REMOTE_STATES
+# Each remote message names the agent's tmux target (session:win.pane).
 #
 # Config (secrets stay OUT of git): sourced from ~/.config/cc-notify/config —
-#   NTFY_URL="https://ntfy.sh/<your-private-topic>"
 #   SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
-#   CC_NOTIFY_PHONE_STATES="waiting"   # space-separated: which states reach the phone
+#   DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
+#   CC_NOTIFY_REMOTE_STATES="waiting"  # space-separated: which states go remote
 #   CC_NOTIFY_DESKTOP=1                 # 0 to silence desktop
-#   CC_NOTIFY_THROTTLE=45              # seconds; suppress duplicate phone pings per pane+state
-# Anything unset falls back to a sensible default; missing channels are skipped.
+#   CC_NOTIFY_THROTTLE=45              # seconds; suppress dup pings per pane+state
+# Anything unset falls back to a default; missing channels are skipped.
 # Fail-open: never exit non-zero, never block the hook.
 set -o pipefail
 
@@ -26,7 +25,7 @@ while [ $# -gt 0 ]; do
     --state)   state="$2"; shift 2 ;;
     --title)   title="$2"; shift 2 ;;
     --message) message="$2"; shift 2 ;;
-    --pane)    pane="$2"; shift 2 ;;     # tmux pane id, e.g. %42
+    --pane)    pane="$2"; shift 2 ;;
     --proj)    proj="$2"; shift 2 ;;
     --age)     age="$2"; shift 2 ;;
     *) shift ;;
@@ -34,10 +33,10 @@ while [ $# -gt 0 ]; do
 done
 
 : "${CC_NOTIFY_DESKTOP:=1}"
-: "${CC_NOTIFY_PHONE_STATES:=waiting}"
+: "${CC_NOTIFY_REMOTE_STATES:=${CC_NOTIFY_PHONE_STATES:-waiting}}"  # legacy name honored
 : "${CC_NOTIFY_THROTTLE:=45}"
 
-# Resolve a human target (session:win.pane) from the pane id, for reply routing.
+# Human target (session:win.pane) from the pane id, so a message says which agent.
 if [ -n "$pane" ] && command -v tmux >/dev/null 2>&1; then
   target=$(tmux display-message -p -t "$pane" '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null)
 fi
@@ -49,12 +48,12 @@ if [ "$CC_NOTIFY_DESKTOP" = "1" ] && command -v terminal-notifier >/dev/null 2>&
     -sound Glass -group "cc-$proj" >/dev/null 2>&1 &
 fi
 
-# --- should this state reach the phone? -------------------------------------
-phone=0
-for s in $CC_NOTIFY_PHONE_STATES; do [ "$s" = "$state" ] && phone=1; done
-[ "$phone" = 1 ] || exit 0
+# --- does this state go to the remote channels? -----------------------------
+remote=0
+for s in $CC_NOTIFY_REMOTE_STATES; do [ "$s" = "$state" ] && remote=1; done
+[ "$remote" = 1 ] || exit 0
 
-# --- per-pane+state throttle so toggling agents don't spam the lock screen ---
+# --- per-pane+state throttle so toggling agents don't spam the channels ------
 tdir="${TMPDIR:-/tmp}/cc-notify"; mkdir -p "$tdir" 2>/dev/null
 key=$(printf '%s-%s' "${pane:-x}" "$state" | tr -c 'A-Za-z0-9_-' '_')
 tf="$tdir/$key.last"
@@ -65,48 +64,27 @@ if [ -r "$tf" ]; then
 fi
 echo "$now" > "$tf" 2>/dev/null
 
-body="$message"
-[ -n "$age" ] && body="$body (waiting ${age})"
-body="$body
-agent: $target"
+case "$state" in
+  waiting) emoji=":hourglass_flowing_sand:"; demoji="⏳" ;;
+  done)    emoji=":white_check_mark:";       demoji="✅" ;;
+  *)       emoji=":robot_face:";             demoji="🤖" ;;
+esac
+suffix=""; [ -n "$age" ] && suffix=" (waiting ${age})"
 
-# --- ntfy (push; "waiting" pushes carry reply buttons for two-way control) ---
-# Reply buttons POST a "cmd|pane" message to the control topic; cc-notify-listen
-# (a launchd daemon) consumes it and runs tmux send-keys on that pane.
-if [ -n "${NTFY_URL:-}" ] && command -v jq >/dev/null 2>&1; then
-  ntfy_base="${NTFY_URL%/*}"; ntfy_topic="${NTFY_URL##*/}"
-  : "${NTFY_CONTROL_URL:=${NTFY_URL}-ctrl}"
-  case "$state" in
-    waiting) prio=4; tags='["warning","inbox_tray"]' ;;
-    done)    prio=3; tags='["white_check_mark"]' ;;
-    *)       prio=3; tags='["robot_face"]' ;;
-  esac
-  actions='[]'
-  if [ "$state" = waiting ] && [ -n "$pane" ]; then
-    actions=$(jq -nc --arg u "$NTFY_CONTROL_URL" --arg p "$pane" '
-      [ {action:"http",label:"Proceed", url:$u,method:"POST",body:("proceed|"  + $p),clear:true},
-        {action:"http",label:"Continue",url:$u,method:"POST",body:("continue|" + $p),clear:true},
-        {action:"http",label:"Stop",    url:$u,method:"POST",body:("stop|"     + $p),clear:true} ]')
-  fi
-  payload=$(jq -nc --arg topic "$ntfy_topic" --arg title "$title · $target" \
-    --arg msg "$body" --argjson prio "$prio" --argjson tags "$tags" --argjson actions "$actions" \
-    '{topic:$topic,title:$title,message:$msg,priority:$prio,tags:$tags}
-     + (if ($actions|length)>0 then {actions:$actions} else {} end)')
-  curl -fsS --max-time 6 -d "$payload" "$ntfy_base" >/dev/null 2>&1 &
+# --- Slack (incoming webhook) -----------------------------------------------
+if [ -n "${SLACK_WEBHOOK_URL:-}" ] && command -v jq >/dev/null 2>&1; then
+  text="$emoji *${title}* — ${message} \`${target}\`${suffix}"
+  jq -nc --arg t "$text" '{text:$t}' \
+    | curl -fsS --max-time 6 -H 'Content-type: application/json' --data @- \
+        "$SLACK_WEBHOOK_URL" >/dev/null 2>&1 &
 fi
 
-# --- Slack (incoming webhook; push-only) ------------------------------------
-if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
-  case "$state" in
-    waiting) emoji=":hourglass_flowing_sand:" ;;
-    done)    emoji=":white_check_mark:" ;;
-    *)       emoji=":robot_face:" ;;
-  esac
-  text="$emoji *$title* — $message  \`$target\`"
-  [ -n "$age" ] && text="$text  _(waiting ${age})_"
-  payload=$(printf '{"text":%s}' "$(printf '%s' "$text" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "\"%s\"", $0}')")
-  curl -fsS --max-time 6 -X POST -H 'Content-type: application/json' \
-    --data "$payload" "$SLACK_WEBHOOK_URL" >/dev/null 2>&1 &
+# --- Discord (webhook; "content" field) -------------------------------------
+if [ -n "${DISCORD_WEBHOOK_URL:-}" ] && command -v jq >/dev/null 2>&1; then
+  content="$demoji **${title}** — ${message} \`${target}\`${suffix}"
+  jq -nc --arg c "$content" '{content:$c}' \
+    | curl -fsS --max-time 6 -H 'Content-type: application/json' --data @- \
+        "$DISCORD_WEBHOOK_URL" >/dev/null 2>&1 &
 fi
 
 exit 0

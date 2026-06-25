@@ -264,35 +264,17 @@ setup_lazygit() {
 }
 
 setup_cc_notify() {
-  log "cc-notify config (agent push notifications)"
-  # Secrets (ntfy topic, Slack webhook) must NOT be tracked, so the real config
-  # is generated from the example with a private ntfy topic, never symlinked.
+  log "cc-notify config (agent notifications → Slack/Discord)"
+  # Webhook URLs are secrets, so the real config is copied from the example and
+  # filled in by hand; it is never tracked or symlinked.
   mkdir -p "$HOME/.config/cc-notify"
   local cfg="$HOME/.config/cc-notify/config"
   if [[ -f "$cfg" ]]; then
     ok "cc-notify config exists — leaving it"
   else
-    local topic
-    topic="cc-agents-$(openssl rand -hex 4 2>/dev/null || echo "$RANDOM$RANDOM")"
-    sed "s#REPLACE-WITH-YOUR-PRIVATE-TOPIC#${topic}#" \
-      "$DOTFILES/.config/cc-notify/config.example" > "$cfg"
+    cp "$DOTFILES/.config/cc-notify/config.example" "$cfg"
     chmod 600 "$cfg"
-    ok "created $cfg (ntfy topic: $topic) — subscribe to it in the ntfy app; add Slack webhook to enable Slack"
-  fi
-
-  # Two-way reply listener (macOS): a LaunchAgent runs cc-notify-listen, which
-  # turns ntfy reply buttons into `tmux send-keys`. The script is copied to
-  # ~/.local/bin (a REAL copy, not the ~/bin symlink) because launchd cannot
-  # execute files under ~/Documents (TCC-protected), where the repo lives.
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    mkdir -p "$HOME/.local/bin"
-    cp "$DOTFILES/bin/cc-notify-listen" "$HOME/.local/bin/cc-notify-listen"
-    chmod +x "$HOME/.local/bin/cc-notify-listen"
-    local plist="$HOME/Library/LaunchAgents/com.kush.cc-notify-listen.plist"
-    sed "s#__HOME__#$HOME#g" \
-      "$DOTFILES/.config/cc-notify/com.kush.cc-notify-listen.plist" > "$plist"
-    launchctl unload "$plist" 2>/dev/null
-    launchctl load -w "$plist" 2>/dev/null && ok "cc-notify-listen LaunchAgent loaded"
+    ok "created $cfg — add your Slack and/or Discord webhook URL(s)"
   fi
 }
 
