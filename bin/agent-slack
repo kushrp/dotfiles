@@ -1,0 +1,584 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["slack-bolt>=1.21", "slack-sdk>=3.31", "httpx>=0.27"]
+# ///
+"""
+agent-slack — drive a coding agent from Slack on your phone, Shrek-style.
+
+One Slack thread per agent session: the agent's output streams into the thread,
+and your thread replies are fed back to the agent (steer / answer / next task).
+No public endpoint needed (Slack Socket Mode), so it works from anywhere your
+phone has Slack. Two pluggable substrates:
+  - claude : `claude -p --output-format stream-json --input-format stream-json`
+  - opencode: `opencode serve` HTTP API (POST /session, /prompt_async, SSE /event)
+
+Run modes:
+  agent-slack selftest claude "say hi"      # drive a driver, print to stdout (no Slack)
+  agent-slack selftest opencode "say hi"
+  agent-slack serve                         # the Slack Socket Mode bridge
+
+Config: ~/.config/agent-slack/config (KEY=VALUE, untracked) or env —
+  SLACK_BOT_TOKEN=xoxb-...   SLACK_APP_TOKEN=xapp-...   SLACK_CHANNEL=C0...
+  AGENT_DRIVER=claude|opencode   AGENT_CWD=/path/to/project
+"""
+import json, os, re, shlex, queue, subprocess, sys, threading, time, urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+# ---- config ---------------------------------------------------------------
+def load_config():
+    cfg = Path.home() / ".config/agent-slack/config"
+    if not cfg.is_file():
+        return
+    for line in cfg.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        try:
+            toks = shlex.split(v, comments=True)   # handles quotes + inline # comments
+        except ValueError:
+            toks = [v.strip().strip('"').strip("'")]
+        os.environ.setdefault(k.strip(), toks[0] if toks else "")
+load_config()
+
+def log(*a):
+    print(f"[agent-slack {time.strftime('%H:%M:%S')}]", *a, file=sys.stderr, flush=True)
+
+# ---- driver interface -----------------------------------------------------
+# A driver streams an agent session and calls handler callbacks:
+#   on_text(str)  incremental assistant text
+#   on_tool(str)  a one-line tool-activity note
+#   on_idle()     the agent finished its turn (ready for the next reply)
+# and exposes .send(text) to push a new user turn, and .stop().
+
+class ClaudeDriver:
+    name = "claude"
+    def __init__(self, cwd, handler):
+        self.cwd, self.h = cwd, handler
+        self.proc = subprocess.Popen(
+            ["claude", "-p", "--output-format", "stream-json",
+             "--input-format", "stream-json", "--verbose",
+             "--dangerously-skip-permissions"],
+            cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, text=True, bufsize=1)
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _read(self):
+        for line in self.proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                o = json.loads(line)
+            except Exception:
+                continue
+            t = o.get("type")
+            if t == "assistant":
+                for blk in o.get("message", {}).get("content", []):
+                    if blk.get("type") == "text" and blk.get("text"):
+                        self.h.on_text(blk["text"])
+                    elif blk.get("type") == "tool_use":
+                        self.h.on_tool(f"{blk.get('name','tool')}")
+            elif t == "result":
+                self.h.on_idle()
+
+    def send(self, text):
+        msg = {"type": "user", "message": {"role": "user",
+               "content": [{"type": "text", "text": text}]}}
+        self.proc.stdin.write(json.dumps(msg) + "\n")
+        self.proc.stdin.flush()
+
+    def stop(self):
+        try:
+            self.proc.terminate()
+        except Exception:
+            pass
+
+
+class OpencodeDriver:
+    name = "opencode"
+    _server = None  # shared headless server (port) per process
+
+    def __init__(self, cwd, handler):
+        self.cwd, self.h = cwd, handler
+        self.base = self._ensure_server(cwd)
+        self.sid = self._api("POST", "/session", {})["id"]
+        self._seen_len = {}    # partID -> chars already emitted
+        self._done_msgs = set()  # assistant messageIDs already marked complete
+        self._role = {}        # messageID -> role (to skip echoed user prompts)
+        threading.Thread(target=self._read_events, daemon=True).start()
+
+    @classmethod
+    def _ensure_server(cls, cwd):
+        if cls._server:
+            return cls._server
+        port = 4099
+        subprocess.Popen(["opencode", "serve", "--port", str(port),
+                          "--hostname", "127.0.0.1"], cwd=cwd,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        base = f"http://127.0.0.1:{port}"
+        for _ in range(40):
+            try:
+                urllib.request.urlopen(base + "/doc", timeout=1)
+                break
+            except Exception:
+                time.sleep(0.25)
+        cls._server = base
+        return base
+
+    def _api(self, method, path, body=None):
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(self.base + path, data=data, method=method,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            raw = r.read().decode()
+            return json.loads(raw) if raw else {}
+
+    def _read_events(self):
+        req = urllib.request.Request(self.base + "/event")
+        with urllib.request.urlopen(req, timeout=None) as r:
+            for raw in r:
+                raw = raw.decode("utf-8", "ignore").strip()
+                if raw.startswith("data:"):
+                    raw = raw[5:].strip()
+                if not raw:
+                    continue
+                try:
+                    o = json.loads(raw)
+                except Exception:
+                    continue
+                p = o.get("properties", {})
+                if p.get("sessionID") != self.sid:
+                    continue
+                t = o.get("type")
+                if t == "message.part.updated":
+                    part = p.get("part", {})
+                    if self._role.get(part.get("messageID")) == "user":
+                        continue  # don't echo the user's own prompt back
+                    if part.get("type") == "text" and part.get("text"):
+                        pid = part.get("id", "")
+                        prev = self._seen_len.get(pid, 0)
+                        full = part["text"]
+                        if len(full) > prev:
+                            self.h.on_text(full[prev:])
+                            self._seen_len[pid] = len(full)
+                    elif part.get("type") == "tool":
+                        self.h.on_tool(part.get("tool", "tool"))
+                elif t == "message.updated":
+                    info = p.get("info", {})
+                    mid = info.get("id")
+                    if mid:
+                        self._role[mid] = info.get("role")
+                    if (info.get("role") == "assistant"
+                            and info.get("time", {}).get("completed")
+                            and mid not in self._done_msgs):
+                        self._done_msgs.add(mid)
+                        self.h.on_idle()
+
+    def send(self, text):
+        self._api("POST", f"/session/{self.sid}/prompt_async",
+                  {"parts": [{"type": "text", "text": text}]})
+
+    def stop(self):
+        try:
+            self._api("POST", f"/session/{self.sid}/abort", {})
+        except Exception:
+            pass
+
+
+DRIVERS = {"claude": ClaudeDriver, "opencode": OpencodeDriver}
+
+# ---- selftest: drive a driver, print to stdout (no Slack) ------------------
+class PrintHandler:
+    def __init__(self):
+        self.done = threading.Event()
+    def on_text(self, s):  print(s, end="", flush=True)
+    def on_tool(self, s):  print(f"\n  · [{s}]", flush=True)
+    def on_idle(self):     print("\n--- idle (turn done) ---", flush=True); self.done.set()
+
+def selftest(driver_name, prompt):
+    cwd = os.environ.get("AGENT_CWD", os.getcwd())
+    h = PrintHandler()
+    log(f"starting {driver_name} in {cwd}")
+    drv = DRIVERS[driver_name](cwd, h)
+    drv.send(prompt)
+    if not h.done.wait(timeout=120):
+        log("timed out waiting for idle")
+    time.sleep(0.5)
+    drv.stop()
+
+# ---- serve: the Slack Socket Mode bridge ----------------------------------
+def serve():
+    from slack_bolt import App
+    from slack_bolt.adapter.socket_mode import SocketModeHandler
+    bot = os.environ["SLACK_BOT_TOKEN"]; appt = os.environ["SLACK_APP_TOKEN"]
+    default_channel = os.environ.get("SLACK_CHANNEL", "")
+    driver_name = os.environ.get("AGENT_DRIVER", "claude")
+    cwd = os.environ.get("AGENT_CWD", str(Path.home()))
+    app = App(token=bot)
+    sessions = {}   # thread_ts -> {"drv":driver, "buf":[], "lock":Lock, "msg_ts":None}
+
+    class SlackHandler:
+        """Batches streamed text and posts/edits one Slack message per turn."""
+        def __init__(self, client, channel, thread_ts):
+            self.client, self.channel, self.thread_ts = client, channel, thread_ts
+            self.buf = ""; self.msg_ts = None; self.lock = threading.Lock()
+            self.last = 0.0
+        def _flush(self, final=False):
+            with self.lock:
+                if not self.buf:
+                    return
+                text = self.buf[:3900]
+                try:
+                    if self.msg_ts is None:
+                        r = self.client.chat_postMessage(channel=self.channel,
+                                thread_ts=self.thread_ts, text=text)
+                        self.msg_ts = r["ts"]
+                        log(f"  posted agent reply into thread {self.thread_ts}")
+                    else:
+                        self.client.chat_update(channel=self.channel, ts=self.msg_ts, text=text)
+                except Exception as e:
+                    log(f"  SLACK POST FAILED: {e}")
+                self.last = time.time()
+        def on_text(self, s):
+            with self.lock:
+                self.buf += s
+            if time.time() - self.last > 1.0:
+                self._flush()
+        def on_tool(self, s):
+            self.client.chat_postMessage(channel=self.channel,
+                thread_ts=self.thread_ts, text=f":wrench: `{s}`")
+        def on_idle(self):
+            self._flush(final=True)
+            log(f"  turn idle (thread {self.thread_ts})")
+            with self.lock:
+                self.buf = ""; self.msg_ts = None  # next turn = new message
+
+    @app.event("message")
+    def on_message(event, client):
+        if event.get("bot_id") or event.get("subtype"):
+            return
+        text = (event.get("text") or "").strip()
+        channel = event["channel"]; ts = event["ts"]
+        thread_ts = event.get("thread_ts")
+        log(f"message from {event.get('user')} ch={channel} thread={thread_ts} text={text[:60]!r}")
+        if thread_ts and thread_ts in sessions:        # reply -> steer/answer
+            log(f"  -> steering session {thread_ts}")
+            sessions[thread_ts]["drv"].send(text)
+            client.reactions_add(channel=channel, timestamp=ts, name="eyes")
+            return
+        if thread_ts:                                  # reply in an unknown thread
+            log("  -> reply in unknown thread, ignoring")
+            return
+        # new top-level message -> thread the agent's replies UNDER the user's
+        # own message (no separate bot parent). The user's message ts IS the
+        # thread root, so the session is "the chat" and replies steer it.
+        log("  -> starting new session")
+        root = ts
+        h = SlackHandler(client, channel, root)
+        drv = DRIVERS[driver_name](cwd, h)
+        sessions[root] = {"drv": drv, "h": h}
+        drv.send(text)
+        log(f"  -> session started, thread={root}")
+        client.reactions_add(channel=channel, timestamp=ts, name="robot_face")
+
+    log(f"bridge up: driver={driver_name} cwd={cwd} channel={default_channel or '(any)'}")
+    SocketModeHandler(app, appt).start()
+
+# ---- fleet: bridge ALREADY-RUNNING Claude tmux sessions to #kush-claude -----
+# Posts one Slack thread per live `claude` pane, tails each session's transcript
+# into its thread, and routes thread replies back to the pane via send-keys.
+def _tmux(*a):
+    return subprocess.run(["tmux", *a], capture_output=True, text=True).stdout
+
+def _claude_panes():
+    fmt = "\t".join(["#{pane_id}", "#{pane_current_command}", "#{pane_current_path}",
+                     "#{pane_title}", "#{@cc_status}",
+                     "#{session_name}:#{window_index}.#{pane_index}"])
+    panes = []
+    for ln in _tmux("list-panes", "-a", "-F", fmt).splitlines():
+        f = ln.split("\t")
+        if len(f) < 6:
+            continue
+        pid, cmd, cwd, title, cc, target = f[:6]
+        if cmd == "claude" or re.match(r"^\d+\.\d+", cmd):   # claude renames proc to its version
+            panes.append(dict(id=pid, cmd=cmd, cwd=cwd, title=title, cc=cc, target=target))
+    return panes
+
+def _transcript_of(pane_id, cwd=None):
+    # Strict: only the per-pane @cc_transcript stamp (set by cc-status.sh on each
+    # hook fire) is reliable. A cwd-based guess maps every pane sharing a cwd to
+    # the same file, so we DON'T fall back to it — we wait for the stamp instead.
+    t = _tmux("show-options", "-pqv", "-t", pane_id, "@cc_transcript").strip()
+    return t if (t and Path(t).exists()) else ""
+
+def _assistant_texts(o):
+    if o.get("type") != "assistant" or o.get("isSidechain"):
+        return []
+    return [b["text"] for b in o.get("message", {}).get("content", [])
+            if isinstance(b, dict) and b.get("type") == "text" and b.get("text")]
+
+def _last_assistant(path):
+    try:
+        lines = Path(path).read_text(errors="ignore").splitlines()[-300:]
+    except Exception:
+        return ""
+    for ln in reversed(lines):
+        try:
+            ts = _assistant_texts(json.loads(ln))
+        except Exception:
+            continue
+        if ts:
+            return ts[-1]
+    return ""
+
+def _md_to_slack(s):
+    # Claude emits standard Markdown; Slack uses "mrkdwn" (different). Convert the
+    # common cases so messages render instead of showing raw **/##/[](). Code
+    # spans and ``` fences are already Slack-compatible, so leave them.
+    s = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r"<\2|\1>", s)   # links
+    s = re.sub(r"(?m)^\s{0,3}#{1,6}\s+(.+?)\s*#*$", r"*\1*", s)         # headers -> bold
+    s = re.sub(r"\*\*(.+?)\*\*", r"*\1*", s)                            # **bold** -> *bold*
+    s = re.sub(r"(?m)^(\s*)[-*]\s+", r"\1• ", s)                        # bullets
+    return s
+
+def _html_writes(o):
+    # .html files written/edited in this assistant message (so we can surface them)
+    out = []
+    if o.get("type") != "assistant":
+        return out
+    for b in o.get("message", {}).get("content", []):
+        if isinstance(b, dict) and b.get("type") == "tool_use" \
+                and b.get("name") in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
+            fp = (b.get("input") or {}).get("file_path", "")
+            if fp.endswith(".html"):
+                out.append(fp)
+    return out
+
+def _questions(o):
+    # Structured AskUserQuestion tool data, so the bridge can render tappable
+    # Block Kit buttons. Free-text questions already arrive as assistant text.
+    out = []
+    if o.get("type") != "assistant":
+        return out
+    for b in o.get("message", {}).get("content", []):
+        if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "AskUserQuestion":
+            for q in (b.get("input") or {}).get("questions", []):
+                out.append({
+                    "q": q.get("question", "?"),
+                    "opts": [{"label": op.get("label", ""), "desc": op.get("description", "")}
+                             for op in q.get("options", [])],
+                    "multi": bool(q.get("multiSelect")),
+                })
+    return out
+
+def fleet():
+    from slack_bolt import App
+    from slack_bolt.adapter.socket_mode import SocketModeHandler
+    bot = os.environ["SLACK_BOT_TOKEN"]; appt = os.environ["SLACK_APP_TOKEN"]
+    channel = os.environ.get("SLACK_KUSH_CLAUDE_CHANNEL", "")
+    if not channel:
+        log("ERROR: set SLACK_KUSH_CLAUDE_CHANNEL (the #kush-claude channel id) in config")
+        sys.exit(1)
+    app = App(token=bot); client = app.client
+    sd = Path.home() / ".local/state/agent-slack"; sd.mkdir(parents=True, exist_ok=True)
+    mapfile = sd / "fleet.json"
+    pane_by_thread, thread_by_pane, pane_cwd = {}, {}, {}
+    if mapfile.exists():
+        try:
+            for pane, th in json.loads(mapfile.read_text()).items():
+                thread_by_pane[pane] = th; pane_by_thread[th] = pane
+        except Exception:
+            pass
+    def save():
+        mapfile.write_text(json.dumps(thread_by_pane))
+
+    # Serve model-generated HTML on the tailnet so you can open it from your phone.
+    import http.server, functools, shutil
+    html_dir = Path.home() / ".local/share/agent-slack/html"
+    html_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        tn_ip = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True,
+                               timeout=5).stdout.strip().splitlines()[0]
+    except Exception:
+        tn_ip = "127.0.0.1"
+    HTML_PORT = 8765
+    try:
+        _h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(html_dir))
+        threading.Thread(target=http.server.ThreadingHTTPServer(("0.0.0.0", HTML_PORT), _h).serve_forever,
+                         daemon=True).start()
+        log(f"html server: http://{tn_ip}:{HTML_PORT}")
+    except Exception as e:
+        log(f"html server failed: {e}")
+
+    def publish_html(src, pane_id):
+        # copy under a stable per-pane name so one URL always serves the latest
+        try:
+            safe = re.sub(r"[^A-Za-z0-9._-]", "-", f"{pane_id.strip('%')}-{Path(src).name}")
+            shutil.copy2(src, html_dir / safe)
+            return f"http://{tn_ip}:{HTML_PORT}/{safe}"
+        except Exception as e:
+            log(f"publish_html failed: {e}"); return ""
+
+    def tail(pane_id, thread_ts):
+        # Post assistant messages newer than attach, deduped by uuid. Convert
+        # Markdown -> Slack mrkdwn, surface generated HTML as tailnet links, and
+        # flag when the session is waiting on you.
+        cutoff = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:23]
+        posted, seen_html = set(), set()
+        path = ""
+        while not path:
+            path = _transcript_of(pane_id, pane_cwd.get(pane_id, ""))
+            if not path:
+                time.sleep(4)
+        while True:
+            try:
+                data = Path(path).read_text(errors="ignore")
+            except Exception:
+                time.sleep(2); continue
+            for ln in data.splitlines():
+                try:
+                    o = json.loads(ln)
+                except Exception:
+                    continue
+                u = o.get("uuid")
+                if not u or u in posted:
+                    continue
+                if (o.get("timestamp") or "")[:23] < cutoff:   # skip pre-attach history
+                    continue
+                txts, htmls, qs = _assistant_texts(o), _html_writes(o), _questions(o)
+                if not txts and not htmls and not qs:
+                    continue
+                posted.add(u)
+                for t in txts:
+                    try:
+                        client.chat_postMessage(channel=channel, thread_ts=thread_ts,
+                                                text=_md_to_slack(t)[:3500])
+                        log(f"streamed {len(t)}ch -> {thread_ts}")
+                    except Exception as e:
+                        log(f"post fail: {e}")
+                for q in qs:
+                    blocks = [{"type": "section",
+                               "text": {"type": "mrkdwn", "text": f":question: *{q['q']}*"}}]
+                    elems = []
+                    for i, op in enumerate(q["opts"][:5]):    # Slack: max 5 buttons/row
+                        lab = (op["label"] or f"Option {i+1}")[:75]
+                        elems.append({"type": "button",
+                                      "text": {"type": "plain_text", "text": lab},
+                                      "action_id": f"ask:{i}",
+                                      "value": json.dumps({"pane": pane_id, "opt": i,
+                                                           "n": len(q["opts"])})})
+                    if elems:
+                        blocks.append({"type": "actions", "elements": elems})
+                    blocks.append({"type": "context", "elements": [{"type": "mrkdwn",
+                        "text": "_tap an option, or reply with text for a custom answer_"}]})
+                    try:
+                        client.chat_postMessage(channel=channel, thread_ts=thread_ts,
+                                                blocks=blocks, text=q["q"][:150])
+                        log(f"question (buttons) -> {thread_ts}")
+                    except Exception as e:
+                        log(f"post fail: {e}")
+                for fp in htmls:
+                    url = publish_html(fp, pane_id)        # re-copy latest on every edit
+                    if fp not in seen_html and url:
+                        seen_html.add(fp)
+                        try:
+                            client.chat_postMessage(channel=channel, thread_ts=thread_ts,
+                                text=f":globe_with_meridians: *HTML:* `{Path(fp).name}` → {url}")
+                            log(f"html surfaced -> {thread_ts}")
+                        except Exception as e:
+                            log(f"html post fail: {e}")
+            time.sleep(2)
+
+    def attach(p):
+        pane_cwd[p["id"]] = p["cwd"]
+        th = thread_by_pane.get(p["id"])
+        if not th:                       # new session: post the parent thread once
+            head = (f":robot_face: *{(p['title'] or p['cmd'])[:120]}*\n"
+                    f"`{p['target']}` · `{p['cwd']}` · {p['cc'] or 'active'}\n"
+                    f"_reply in this thread to send it to this Claude session_")
+            th = client.chat_postMessage(channel=channel, text=head)["ts"]
+            ctx = _last_assistant(_transcript_of(p["id"]))
+            if ctx:
+                client.chat_postMessage(channel=channel, thread_ts=th, text=f"_latest:_ {ctx[:1500]}")
+            thread_by_pane[p["id"]] = th; pane_by_thread[th] = p["id"]; save()
+            log(f"thread for {p['target']} -> {th}")
+            time.sleep(0.6)              # stagger posts to stay under Slack's rate limit
+        # ALWAYS (re)start the tail — even for panes already mapped from fleet.json,
+        # otherwise a restart leaves known sessions with no one watching them.
+        threading.Thread(target=tail, args=(p["id"], th), daemon=True).start()
+
+    for p in _claude_panes():
+        attach(p)
+
+    def poller():                         # new sessions spun up later auto-attach
+        while True:
+            time.sleep(10)
+            try:
+                for p in _claude_panes():
+                    if p["id"] not in thread_by_pane:
+                        log(f"new session detected: {p['target']}")
+                        attach(p)
+            except Exception as e:
+                log(f"poller error: {e}")
+    threading.Thread(target=poller, daemon=True).start()
+
+    @app.event("message")
+    def on_msg(event, client):
+        if event.get("bot_id") or event.get("subtype"):
+            return
+        th = event.get("thread_ts")
+        if not th or th not in pane_by_thread:
+            return
+        pane = pane_by_thread[th]; text = event.get("text") or ""
+        # type the text, pause so Claude's input (bracketed paste) settles, THEN
+        # submit — sending Enter immediately races and the prompt is lost.
+        _tmux("send-keys", "-t", pane, "-l", "--", text)
+        time.sleep(0.4)
+        _tmux("send-keys", "-t", pane, "Enter")
+        try:
+            client.reactions_add(channel=event["channel"], timestamp=event["ts"], name="eyes")
+        except Exception:
+            pass
+        log(f"sent to {pane}: {text[:60]!r}")
+
+    @app.action(re.compile(r"^ask:\d+$"))
+    def on_ask(ack, body, action):
+        # Tap-to-select an AskUserQuestion option: normalize the widget cursor to
+        # the top, step down to the chosen option, then confirm.
+        ack()
+        try:
+            v = json.loads(action["value"]); pane = v["pane"]; opt = int(v["opt"]); n = int(v.get("n", opt + 1))
+        except Exception:
+            return
+        for _ in range(max(1, n)):
+            _tmux("send-keys", "-t", pane, "Up")
+        for _ in range(opt):
+            _tmux("send-keys", "-t", pane, "Down")
+        time.sleep(0.25)
+        _tmux("send-keys", "-t", pane, "Enter")
+        log(f"ask-select opt#{opt} -> {pane}")
+        try:
+            ch = body["channel"]["id"]
+            th = (body.get("message") or {}).get("thread_ts") or body["message"]["ts"]
+            client.chat_postMessage(channel=ch, thread_ts=th, text=f":point_right: selected *option {opt+1}*")
+        except Exception:
+            pass
+
+    log(f"fleet bridge up: {len(thread_by_pane)} session(s) -> channel {channel}")
+    SocketModeHandler(app, appt).start()
+
+# ---- entrypoint -----------------------------------------------------------
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    if args and args[0] == "selftest" and len(args) >= 3:
+        selftest(args[1], " ".join(args[2:]))
+    elif args and args[0] == "serve":
+        serve()
+    elif args and args[0] == "fleet":
+        fleet()
+    else:
+        print(__doc__)
+        sys.exit(1)

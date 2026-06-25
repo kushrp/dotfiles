@@ -1,0 +1,10 @@
+# agent-slack config — copy to ~/.config/agent-slack/config, fill in. NOT tracked.
+# Slack app with Socket Mode (see setup steps). Both tokens required.
+SLACK_BOT_TOKEN="xoxb-..."      # Bot User OAuth Token
+SLACK_APP_TOKEN="xapp-..."      # App-Level Token (Socket Mode, connections:write)
+SLACK_CHANNEL=""                # optional: restrict to one channel ID (C0...)
+# Which agent substrate to drive, and where it works.
+AGENT_DRIVER="claude"           # claude | opencode
+AGENT_CWD="/Users/kushrustagi/Documents/ask-rogo"
+# Fleet mode: the #kush-claude channel ID (invite the bot there first).
+SLACK_KUSH_CLAUDE_CHANNEL=""

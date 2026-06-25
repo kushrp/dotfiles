@@ -278,6 +278,34 @@ setup_cc_notify() {
   fi
 }
 
+setup_agent_slack() {
+  log "agent-slack (Slack <-> Claude fleet bridge)"
+  mkdir -p "$HOME/.config/agent-slack"
+  local cfg="$HOME/.config/agent-slack/config"
+  if [[ -f "$cfg" ]]; then
+    ok "agent-slack config exists — leaving it"
+  else
+    cp "$DOTFILES/.config/agent-slack/config.example" "$cfg"; chmod 600 "$cfg"
+    ok "created $cfg — add SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_KUSH_CLAUDE_CHANNEL"
+  fi
+  # macOS LaunchAgent. The script is copied to ~/.local/bin (real copy) because
+  # launchd cannot execute from ~/Documents (TCC). uv installs deps on first run.
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    mkdir -p "$HOME/.local/bin"
+    cp "$DOTFILES/bin/agent-slack" "$HOME/.local/bin/agent-slack"; chmod +x "$HOME/.local/bin/agent-slack"
+    local plist="$HOME/Library/LaunchAgents/com.kush.agent-slack-fleet.plist"
+    sed "s#__HOME__#$HOME#g" \
+      "$DOTFILES/.config/agent-slack/com.kush.agent-slack-fleet.plist" > "$plist"
+    launchctl unload "$plist" 2>/dev/null
+    # Only auto-load once real tokens exist, else KeepAlive crash-loops on a fresh box.
+    if grep -Eq '^SLACK_BOT_TOKEN="xoxb-[0-9A-Za-z]{6}' "$cfg"; then
+      launchctl load -w "$plist" 2>/dev/null && ok "agent-slack fleet LaunchAgent loaded"
+    else
+      warn "agent-slack: add tokens to $cfg, then: launchctl load -w $plist"
+    fi
+  fi
+}
+
 setup_starship() {
   log "Starship config"
   link_file "$DOTFILES/.config/starship.toml" "$HOME/.config/starship.toml"
@@ -617,6 +645,7 @@ main() {
   setup_bat
   setup_lazygit
   setup_cc_notify
+  setup_agent_slack
   setup_llm
   setup_zsh_tips
   setup_claude
