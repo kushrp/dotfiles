@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# cc-notify-listen — two-way control daemon for the agent fleet.
+# Streams the ntfy CONTROL topic (where cc-notify's reply buttons POST) and
+# injects canned replies into the target agent pane via `tmux send-keys`.
+# Started/kept-alive by a launchd LaunchAgent. Fail-safe by construction:
+#   - only known commands act (proceed / continue / stop)
+#   - only an existing pane id is ever targeted
+# Reply buttons send "cmd|%paneid"; nothing else has any effect.
+set -o pipefail
+
+CFG="${CC_NOTIFY_CONFIG:-$HOME/.config/cc-notify/config}"
+# shellcheck disable=SC1090
+[ -r "$CFG" ] && . "$CFG"
+: "${NTFY_CONTROL_URL:=${NTFY_URL:-}-ctrl}"
+
+if [ -z "${NTFY_URL:-}" ]; then
+  echo "cc-notify-listen: no NTFY_URL in $CFG; nothing to listen to" >&2
+  exit 1
+fi
+command -v tmux >/dev/null 2>&1 || { echo "cc-notify-listen: tmux not found" >&2; exit 1; }
+command -v jq   >/dev/null 2>&1 || { echo "cc-notify-listen: jq not found" >&2; exit 1; }
+
+dispatch() {
+  local msg="$1" cmd target
+  case "$msg" in *"|"*) ;; *) return 0 ;; esac
+  cmd="${msg%%|*}"; target="${msg#*|}"
+  [ -n "$target" ] || return 0
+  # Only act on a pane that actually exists right now.
+  tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qx "$target" || return 0
+  case "$cmd" in
+    proceed)  tmux send-keys -t "$target" Enter ;;
+    continue) tmux send-keys -t "$target" "continue" Enter ;;
+    stop)     tmux send-keys -t "$target" Escape ;;
+    *) return 0 ;;
+  esac
+}
+
+# Stream newline-delimited JSON events from ntfy; reconnect forever.
+while :; do
+  curl -sN --max-time 0 "${NTFY_CONTROL_URL}/json" 2>/dev/null | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [ "$(printf '%s' "$line" | jq -r '.event // empty' 2>/dev/null)" = "message" ] || continue
+    m="$(printf '%s' "$line" | jq -r '.message // empty' 2>/dev/null)"
+    [ -n "$m" ] && dispatch "$m"
+  done
+  sleep 3   # reconnect backoff if the stream drops
+done

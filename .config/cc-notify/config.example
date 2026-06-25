@@ -1,0 +1,13 @@
+# cc-notify config — copy to ~/.config/cc-notify/config and fill in. NOT tracked.
+# ntfy: install the ntfy app (iOS/Android), subscribe to this exact topic.
+NTFY_URL="https://ntfy.sh/REPLACE-WITH-YOUR-PRIVATE-TOPIC"
+# Two-way control: "waiting" pushes get Proceed/Continue/Stop buttons that POST
+# here; the cc-notify-listen daemon injects the reply into the agent's pane.
+# Defaults to "${NTFY_URL}-ctrl" if unset. Do NOT subscribe to it in the app.
+# NTFY_CONTROL_URL="https://ntfy.sh/REPLACE-WITH-YOUR-PRIVATE-TOPIC-ctrl"
+# Slack: create an Incoming Webhook (api.slack.com/messaging/webhooks), paste URL.
+SLACK_WEBHOOK_URL=""
+# Which states reach the phone (space-separated). Desktop always gets all.
+CC_NOTIFY_PHONE_STATES="waiting"
+CC_NOTIFY_DESKTOP=1
+CC_NOTIFY_THROTTLE=45

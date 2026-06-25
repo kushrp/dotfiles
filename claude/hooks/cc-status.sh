@@ -56,14 +56,22 @@ if [ -n "$TMUX" ]; then
   tmux refresh-client -S 2>/dev/null   # repaint the status bar now
 fi
 
-# Desktop notification only for the states that want your attention.
+# Attention routing for the states that want you. cc-notify fans out to desktop
+# (always) + phone/Slack (per its config), throttled, and carries the agent's
+# tmux target so a future reply-listener can route a response back. Fail-open:
+# if cc-notify is missing, fall back to a plain desktop notification.
 note=""
 case "$state" in
   waiting) note="needs your input" ;;
   done)    note="finished" ;;
 esac
-if [ -n "$note" ] && command -v terminal-notifier >/dev/null 2>&1; then
-  terminal-notifier -title "Claude · $proj" -message "$note" \
-    -sound Glass -group "claude-$proj" >/dev/null 2>&1
+if [ -n "$note" ]; then
+  if command -v cc-notify >/dev/null 2>&1; then
+    cc-notify --state "$state" --title "Claude · $proj" --message "$note" \
+      --proj "$proj" --pane "${TMUX_PANE:-}" >/dev/null 2>&1
+  elif command -v terminal-notifier >/dev/null 2>&1; then
+    terminal-notifier -title "Claude · $proj" -message "$note" \
+      -sound Glass -group "claude-$proj" >/dev/null 2>&1
+  fi
 fi
 exit 0
