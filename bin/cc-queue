@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Persistent "who's waiting on you" ticker for the tmux second status line.
+# Lists blocked agents longest-wait-first (top 3), each as: window · chat · age.
+# Quiet line when nothing is blocked. Glyph/colors match the rest of the bar
+# ( waiting, amber). Pane-scoped via @cc_status / @cc_waiting_since.
+
+now=$(date +%s)
+
+# waiting panes only; stamp-less ones get a sentinel so they sort LAST, not first.
+rows=$(tmux list-panes -a \
+    -F '#{@cc_status}'$'\t''#{session_name}:#{window_index}'$'\t''#{pane_title}'$'\t''#{@cc_waiting_since}' 2>/dev/null \
+  | awk -F'\t' 'BEGIN{OFS="\t"} $1=="waiting"{ if($4 !~ /^[0-9]+$/) $4=9999999999; print }' \
+  | sort -t$'\t' -k4,4n)
+
+if [ -z "$rows" ]; then
+  printf '#[fg=#414868] no agents waiting on you#[default]'
+  exit 0
+fi
+
+fmt() { local s=$1; if (( s>=3600 )); then printf '%dh' $((s/3600)); elif (( s>=60 )); then printf '%dm' $((s/60)); else printf '%ds' "$s"; fi; }
+
+out="#[fg=#e0af68,bold]  blocked#[nobold] "
+n=0
+while IFS=$'\t' read -r _ loc title since; do
+  if (( n >= 3 )); then out+="#[fg=#414868]· …"; break; fi
+  age=""
+  [[ "$since" =~ ^[0-9]+$ && "$since" -lt 9999999999 ]] && age=" $(fmt $(( now - since )))"
+  t="${title:0:22}"
+  [ "$n" -gt 0 ] && out+="#[fg=#414868] · "
+  out+="#[fg=#7dcfff]${loc} #[fg=#9aa0c0]${t}#[fg=#e0af68]${age}"
+  n=$((n+1))
+done < <(printf '%s\n' "$rows")
+
+printf '%s#[default]' "$out"
