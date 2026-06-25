@@ -16,6 +16,10 @@ input="$(cat 2>/dev/null)"   # consume the hook JSON on stdin
 cwd="$(printf '%s' "$input" | jq -r '.cwd // .workspace.current_dir // empty' 2>/dev/null)"
 [ -n "$cwd" ] || cwd="$PWD"
 proj="${cwd##*/}"
+# Claude session id + transcript path, so agent-slack can map THIS pane to its
+# exact transcript (panes often share a cwd, so cwd alone is ambiguous).
+session="$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)"
+transcript="$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null)"
 
 # Per-PANE status flag (only meaningful inside tmux). Pane-scoped, not
 # window-scoped: several agents commonly run as split panes in one window, and a
@@ -23,23 +27,33 @@ proj="${cwd##*/}"
 # unset panes read a sibling's value). cc-agent-count / cc-dashboard read this
 # per pane. The default target pane comes from $TMUX_PANE, set by the hook's
 # parent (claude), so no -t is needed.
-if [ -n "$TMUX" ]; then
+if [ -n "$TMUX" ] && [ -n "$TMUX_PANE" ]; then
+  # CRITICAL: target $TMUX_PANE explicitly. `set-option -p` WITHOUT -t resolves to
+  # the server's ACTIVE pane, not this agent's pane — so when a background agent
+  # fires a hook while you're focused elsewhere, its state lands on the wrong
+  # pane. -t "$P" pins every write to the agent that actually fired the hook.
+  P="$TMUX_PANE"
   if [ "$state" = "clear" ]; then
-    tmux set-option -up @cc_status 2>/dev/null
+    tmux set-option -up -t "$P" @cc_status 2>/dev/null
   else
-    tmux set-option -p @cc_status "$state" 2>/dev/null
+    tmux set-option -p -t "$P" @cc_status "$state" 2>/dev/null
   fi
+  # Stamp this pane's Claude session id + transcript path so agent-slack can map
+  # the exact pane to its transcript (panes often share a cwd, so cwd is not
+  # enough). Set on every hook fire so it stays current across resumes.
+  [ -n "$session" ]    && tmux set-option -p -t "$P" @cc_session "$session" 2>/dev/null
+  [ -n "$transcript" ] && tmux set-option -p -t "$P" @cc_transcript "$transcript" 2>/dev/null
   # Stamp when a pane ENTERS waiting so the bar can show how long it's been
   # blocked (oldest-wait timer); clear the stamp on any other state.
   if [ "$state" = "waiting" ]; then
-    tmux set-option -p @cc_waiting_since "$(date +%s)" 2>/dev/null
+    tmux set-option -p -t "$P" @cc_waiting_since "$(date +%s)" 2>/dev/null
   else
-    tmux set-option -up @cc_waiting_since 2>/dev/null
+    tmux set-option -up -t "$P" @cc_waiting_since 2>/dev/null
   fi
   # Roll this window's tab glyph up to its neediest pane (waiting > working >
   # done). Kept under a SEPARATE name (@cc_win) so it never leaks into the
   # per-pane @cc_status reads via tmux option inheritance.
-  win="$(tmux display-message -p '#{window_id}' 2>/dev/null)"
+  win="$(tmux display-message -p -t "$P" '#{window_id}' 2>/dev/null)"
   if [ -n "$win" ]; then
     roll=""
     for s in waiting working "done"; do
