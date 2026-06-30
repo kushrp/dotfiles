@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "skiplagged": { "type": "http", "url": "https://mcp.skiplagged.com/mcp" },
+    "kiwi": { "type": "http", "url": "https://mcp.kiwi.com" },
+    "trivago": { "type": "http", "url": "https://mcp.trivago.com/mcp" },
+    "ferryhopper": { "type": "http", "url": "https://mcp.ferryhopper.com/mcp" },
+    "liteapi": {
+      "type": "http",
+      "url": "https://mcp.liteapi.travel/api/mcp",
+      "headers": { "Authorization": "Bearer ${LITEAPI_API_KEY:-unset}" }
+    },
+    "airbnb": {
+      "command": "npx",
+      "args": ["-y", "@openbnb/mcp-server-airbnb@latest", "--ignore-robots-txt"]
+    },
+    "google-flights": {
+      "type": "stdio",
+      "command": "/Users/kushrustagi/Documents/mcp-servers/google-flights-mcp/.venv/bin/python",
+      "args": ["/Users/kushrustagi/Documents/mcp-servers/google-flights-mcp/src/flights-mcp-server.py"],
+      "env": {}
+    },
+    "pointsyeah": { "type": "http", "url": "https://www.pointsyeah.com/api/mcp" }
+  }
+}

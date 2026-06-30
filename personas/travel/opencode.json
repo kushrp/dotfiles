@@ -1,0 +1,45 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "//": "opencode 'travel' persona. Loaded on demand via: OPENCODE_CONFIG=~/.config/opencode/travel.json opencode (see `ot` launcher). Mirrors the Rogo vllm provider from ask-rogo/opencode.json so it runs outside the repo; adds the travel-hacker MCP suite. Keep the MCP block in sync with ~/.claude/personas/travel.mcp.json.",
+  "model": "vllm/Qwen/Qwen3.6-35B-A3B-FP8",
+  "small_model": "vllm/Qwen/Qwen3.6-35B-A3B-FP8",
+  "provider": {
+    "vllm": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Rogo",
+      "options": { "baseURL": "https://llm-rtx6000-1.tailaa4fb.ts.net/v1" },
+      "models": {
+        "Qwen/Qwen3.6-35B-A3B-FP8": {
+          "name": "Rogo Qwen 35B FP8",
+          "limit": { "context": 262144, "output": 32768 }
+        }
+      }
+    }
+  },
+  "mcp": {
+    "skiplagged": { "type": "remote", "url": "https://mcp.skiplagged.com/mcp", "enabled": true },
+    "kiwi": { "type": "remote", "url": "https://mcp.kiwi.com", "enabled": true },
+    "trivago": { "type": "remote", "url": "https://mcp.trivago.com/mcp", "enabled": true },
+    "ferryhopper": { "type": "remote", "url": "https://mcp.ferryhopper.com/mcp", "enabled": true },
+    "liteapi": {
+      "type": "remote",
+      "url": "https://mcp.liteapi.travel/api/mcp",
+      "enabled": true,
+      "headers": { "Authorization": "Bearer {env:LITEAPI_API_KEY}" }
+    },
+    "airbnb": {
+      "type": "local",
+      "command": ["npx", "-y", "@openbnb/mcp-server-airbnb@latest", "--ignore-robots-txt"],
+      "enabled": true
+    },
+    "google-flights": {
+      "type": "local",
+      "command": [
+        "/Users/kushrustagi/Documents/mcp-servers/google-flights-mcp/.venv/bin/python",
+        "/Users/kushrustagi/Documents/mcp-servers/google-flights-mcp/src/flights-mcp-server.py"
+      ],
+      "enabled": true
+    },
+    "pointsyeah": { "type": "remote", "url": "https://www.pointsyeah.com/api/mcp", "enabled": true }
+  }
+}
