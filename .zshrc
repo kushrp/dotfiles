@@ -372,6 +372,31 @@ ccland() {
 # Central agent dashboard (also `prefix A` in tmux): all sessions + live preview.
 alias ccd='cc-dashboard'
 
+# --- 7c. Persona launchers (heavy tool suites, loaded ONLY on demand) -------
+# Default `cc`/`claude` sessions stay lean; these opt into a full suite for one
+# session. The suite is NOT in the base prompt otherwise (saves ~3.5k tok/turn).
+#   ct  / claude-travel     Claude   + travel-hacker skills + agent + travel MCP
+#   cxt / codex-travel      Codex    + travel MCP profile (codex --profile travel)
+#   ot  / opencode-travel   opencode + travel MCP (OPENCODE_CONFIG persona file)
+# Subagents inherit the launching session, so agents spawned inside any of these
+# get the suite automatically — no per-agent wiring needed.
+claude-travel() {
+  command -v claude >/dev/null 2>&1 || { print -u2 "claude not installed"; return 1; }
+  claude --plugin-dir "$HOME/.claude/personas/travel-hacker" \
+         --mcp-config "$HOME/.claude/personas/travel.mcp.json" ${=CC_FLAGS} "$@"
+}
+codex-travel() {
+  command -v codex >/dev/null 2>&1 || { print -u2 "codex not installed"; return 1; }
+  codex --profile travel "$@"
+}
+opencode-travel() {
+  command -v opencode >/dev/null 2>&1 || { print -u2 "opencode not installed"; return 1; }
+  OPENCODE_CONFIG="$HOME/.config/opencode/travel.json" opencode "$@"
+}
+alias ct='claude-travel'
+alias cxt='codex-travel'
+alias ot='opencode-travel'
+
 # --- Bracketed paste (safe multi-line paste) -------------------------------
 # Guarantees pasted text — multi-line commands, quotes, code — lands as literal
 # text you can edit, instead of executing line-by-line. zsh enables this by

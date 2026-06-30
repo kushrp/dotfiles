@@ -1,0 +1,32 @@
+# Codex "travel" persona — layered on base config via:  codex --profile travel
+# Brings back the travel-hacker MCP suite ONLY for sessions launched with this profile.
+# stdio servers (airbnb, google-flights) work on any recent Codex.
+# HTTP (url) servers require Codex with streamable-HTTP MCP support; if a server
+# fails to start, run `codex --profile travel mcp` / `codex doctor` and adjust.
+
+[mcp_servers.airbnb]
+command = "npx"
+args = ["-y", "@openbnb/mcp-server-airbnb@latest", "--ignore-robots-txt"]
+
+[mcp_servers.google-flights]
+command = "/Users/kushrustagi/Documents/mcp-servers/google-flights-mcp/.venv/bin/python"
+args = ["/Users/kushrustagi/Documents/mcp-servers/google-flights-mcp/src/flights-mcp-server.py"]
+
+[mcp_servers.skiplagged]
+url = "https://mcp.skiplagged.com/mcp"
+
+[mcp_servers.kiwi]
+url = "https://mcp.kiwi.com"
+
+[mcp_servers.trivago]
+url = "https://mcp.trivago.com/mcp"
+
+[mcp_servers.ferryhopper]
+url = "https://mcp.ferryhopper.com/mcp"
+
+[mcp_servers.liteapi]
+url = "https://mcp.liteapi.travel/api/mcp"
+bearer_token_env_var = "LITEAPI_API_KEY"
+
+[mcp_servers.pointsyeah]
+url = "https://www.pointsyeah.com/api/mcp"
