@@ -394,6 +394,19 @@ setup_claude() {
     || fail "wire-handoff.py"
 }
 
+# AI personas: heavy tool suites kept OUT of the default agent prompt and loaded
+# on demand via launchers (ct/cxt/ot in .zshrc). Single source of truth lives in
+# personas/<name>/; symlinked into each tool's expected location.
+setup_personas() {
+  log "AI personas (on-demand tool suites)"
+  local p="$DOTFILES/personas/travel"
+  link_file "$p/travel-hacker"     "$HOME/.claude/personas/travel-hacker"
+  link_file "$p/claude.mcp.json"   "$HOME/.claude/personas/travel.mcp.json"
+  link_file "$p/codex.config.toml" "$HOME/.codex/travel.config.toml"
+  link_file "$p/opencode.json"     "$HOME/.config/opencode/travel.json"
+  ok "travel persona linked → claude/codex/opencode (launch: ct / cxt / ot)"
+}
+
 setup_brain() {
   # The second-brain repo (separate from dotfiles) owns its own hook symlinks +
   # settings wiring via wire-brain-settings.py: SessionStart knowledge-index inject,
@@ -649,6 +662,7 @@ main() {
   setup_llm
   setup_zsh_tips
   setup_claude
+  setup_personas
   setup_brain
   setup_atuin
   setup_precommit

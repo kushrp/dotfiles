@@ -11,6 +11,11 @@
 default_install_hook_types: [pre-commit, commit-msg]
 fail_fast: false
 
+# Vendored third-party plugin (travel-hacker persona) — not our code, so it is
+# exempt from this repo's formatting / lint / executable-bit standards. Loaded
+# on demand via `claude --plugin-dir`; see personas/travel/README.md.
+exclude: '^personas/travel/travel-hacker/'
+
 repos:
   # --- Secret scanning -----------------------------------------------------
   # gitleaks runs against staged content. Custom rules + allowlist live in
