@@ -196,6 +196,15 @@ fi
 # SQLite. --disable-up-arrow keeps the normal "prefix-match on up-arrow"
 # behavior we bind below; atuin only owns Ctrl-R.
 if command -v atuin >/dev/null 2>&1; then
+  # Mint the session id with uuidgen (~5ms) instead of atuin's own `atuin uuid`
+  # fork (~250ms cold). atuin's init only mints when ATUIN_SESSION is unset or
+  # ATUIN_SHLVL changed (see its cached init), so pre-seeding both skips the fork.
+  if [[ -z "${ATUIN_SESSION:-}" || "${ATUIN_SHLVL:-}" != "$SHLVL" ]]; then
+    local _atuin_sid; _atuin_sid="$(uuidgen)"
+    export ATUIN_SESSION="${(L)_atuin_sid}"
+    export ATUIN_SHLVL="$SHLVL"
+    unset _atuin_sid
+  fi
   _cache_init atuin-init atuin init zsh --disable-up-arrow
 fi
 # zoxide is initialized LAST of the hook-based tools so its chpwd hook runs
@@ -273,104 +282,46 @@ _ai_suggest_widget() {
 zle -N _ai_suggest_widget
 bindkey '^X^A' _ai_suggest_widget
 
-# --- 7b. Parallel Claude Code agents in git worktrees ----------------------
-# Leaner replacement for workmux: lean on Claude Code's native `--worktree`
-# (branches off origin/HEAD = main, never merges/pushes — safe with Graphite)
-# and tmux + sesh for navigation. One agent per worktree, land via `gt`.
-#
-#   cc <name>             spawn a Claude agent in a fresh worktree + tmux window
-#                          (type your prompt in Claude once it opens)
-#   ccls                  list agent worktrees
-#   ccrm <name>           remove a finished worktree + its branch (after landing)
+# --- 7b. Claude Code launchers ---------------------------------------------
+#   cc [args]             start a new Claude Code session here (skip-permissions)
 #   ccd  /  prefix a      the agent dashboard — jump between running agents
-# Repo the worktrees are cut from. Defaults to ask-rogo so `cc <name>` works from
-# anywhere (no need to cd in first); override per call or in env:
-#   CC_REPO=~/code/other cc <name>
-: ${CC_REPO:=$HOME/Documents/ask-rogo}
-# Flags every spawned agent runs with. Worktrees are isolated, so agents run
-# autonomously (--dangerously-skip-permissions) by default — override per call:
-#   CC_FLAGS= cc <name>            (run WITH permission prompts)
+# Flags cc runs with. Defaults to autonomous (--dangerously-skip-permissions);
+# override per call to get permission prompts:  CC_FLAGS= cc
 : ${CC_FLAGS:=--dangerously-skip-permissions}
+# cc — start a new Claude Code session in the current dir. Extra args pass through
+# (e.g. cc "fix the failing test").
 cc() {
-  emulate -L zsh
-  local name="$1"
-  [[ -n "$name" ]] || { print -u2 "usage: cc <name>"; return 2; }
   command -v claude >/dev/null 2>&1 || { print -u2 "cc: claude not installed"; return 1; }
-  local root; root=$(git -C "$CC_REPO" rev-parse --show-toplevel 2>/dev/null) \
-    || { print -u2 "cc: CC_REPO ('$CC_REPO') is not a git repo"; return 1; }
-  local repo=${root:t}
-  # claude -w creates the worktree off origin/HEAD and starts the session there.
-  # We own the tmux part (Ghostty, not iTerm2), so don't use claude's --tmux.
-  if [[ -n "$TMUX" ]]; then
-    tmux new-window -n "$name" -c "$root" "claude --worktree '$name' ${CC_FLAGS}"
-  else
-    tmux new-session -A -s "$repo" -n "$name" -c "$root" "claude --worktree '$name' ${CC_FLAGS}"
-  fi
-}
-ccls() {
-  local root; root=$(git -C "$CC_REPO" rev-parse --show-toplevel 2>/dev/null) || return 1
-  git -C "$root" worktree list
-}
-ccrm() {
-  emulate -L zsh
-  local name="$1"
-  [[ -n "$name" ]] || { print -u2 "usage: ccrm <name> [--force]"; return 2; }
-  shift
-  local root; root=$(git -C "$CC_REPO" rev-parse --show-toplevel 2>/dev/null) || return 1
-  # Claude names worktrees under .claude/worktrees/<name> on branch worktree-<name>.
-  git -C "$root" worktree remove ".claude/worktrees/$name" "$@" \
-    && git -C "$root" branch -D "worktree-$name" 2>/dev/null
-  git -C "$root" worktree prune
-}
-# ccland [name] — land a finished agent's worktree as a PR. Run it from inside
-# the worktree (after reviewing), or pass the agent name. Submits via Graphite
-# (gt) when the repo is gt-initialized, else git push + gh pr create. Never
-# touches main; after the PR merges, clean up with `ccrm <name>`.
-ccland() {
-  emulate -L zsh
-  command -v git >/dev/null 2>&1 || return 1
-  local common dir branch short n ans
-  common="$(git rev-parse --git-common-dir 2>/dev/null)" \
-    || { print -u2 "ccland: not in a git repo"; return 1; }
-  common="${common:A}"                       # absolute
-  if [[ -n "$1" ]]; then
-    dir="${common:h}/.claude/worktrees/$1"
-    [[ -d "$dir" ]] || { print -u2 "ccland: no worktree '$1' (see: ccls)"; return 1; }
-  else
-    dir="$(git rev-parse --show-toplevel)"
-  fi
-  branch="$(git -C "$dir" symbolic-ref --quiet --short HEAD)" \
-    || { print -u2 "ccland: detached HEAD in $dir"; return 1; }
-  [[ "$branch" == (main|master) ]] && { print -u2 "ccland: refusing to land the trunk ($branch)"; return 1; }
-  if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then
-    print -u2 "ccland: $dir has uncommitted changes — commit them first."; return 1
-  fi
-  n="$(git -C "$dir" rev-list --count "main..$branch" 2>/dev/null \
-       || git -C "$dir" rev-list --count "origin/HEAD..$branch" 2>/dev/null)"
-  [[ -n "$n" && "$n" != 0 ]] || { print -u2 "ccland: nothing to land — '$branch' has no commits beyond main"; return 1; }
-
-  print -P "%B%F{4}── land $branch ($n commit$( ((n>1)) && echo s )) ──%f%b"
-  git -C "$dir" --no-pager log --oneline "main..$branch" 2>/dev/null | sed 's/^/  /'
-  local how="git push + gh pr create"
-  [[ -f "$common/.graphite_repo_config" ]] && command -v gt >/dev/null 2>&1 && how="Graphite (gt submit)"
-  print -Pn "%F{3}submit via ${how}? (y/N) %f"; read -r ans
-  [[ "$ans" == [yY] ]] || { echo "aborted"; return 1; }
-
-  ( cd "$dir" || exit 1
-    if [[ "$how" == Graphite* ]]; then
-      gt track --parent main 2>/dev/null || true   # tell Graphite the parent (no-op if tracked)
-      gt submit
-    else
-      git push -u origin "$branch" \
-        && { command -v gh >/dev/null 2>&1 && gh pr create --fill --web || print "pushed — open a PR for $branch"; }
-    fi
-  )
-  short="${1:-${branch#worktree-}}"
-  print -P "%F{8}after it merges:%f %F{6}ccrm ${short}%f"
+  claude ${=CC_FLAGS} "$@"
 }
 
 # Central agent dashboard (also `prefix A` in tmux): all sessions + live preview.
 alias ccd='cc-dashboard'
+
+# --- 7c. Persona launchers (heavy tool suites, loaded ONLY on demand) -------
+# Default `cc`/`claude` sessions stay lean; these opt into a full suite for one
+# session. The suite is NOT in the base prompt otherwise (saves ~3.5k tok/turn).
+#   ct  / claude-travel     Claude   + travel-hacker skills + agent + travel MCP
+#   cxt / codex-travel      Codex    + travel MCP profile (codex --profile travel)
+#   ot  / opencode-travel   opencode + travel MCP (OPENCODE_CONFIG persona file)
+# Subagents inherit the launching session, so agents spawned inside any of these
+# get the suite automatically — no per-agent wiring needed.
+claude-travel() {
+  command -v claude >/dev/null 2>&1 || { print -u2 "claude not installed"; return 1; }
+  claude --plugin-dir "$HOME/.claude/personas/travel-hacker" \
+         --mcp-config "$HOME/.claude/personas/travel.mcp.json" ${=CC_FLAGS} "$@"
+}
+codex-travel() {
+  command -v codex >/dev/null 2>&1 || { print -u2 "codex not installed"; return 1; }
+  codex --profile travel "$@"
+}
+opencode-travel() {
+  command -v opencode >/dev/null 2>&1 || { print -u2 "opencode not installed"; return 1; }
+  OPENCODE_CONFIG="$HOME/.config/opencode/travel.json" opencode "$@"
+}
+alias ct='claude-travel'
+alias cxt='codex-travel'
+alias ot='opencode-travel'
 
 # --- Bracketed paste (safe multi-line paste) -------------------------------
 # Guarantees pasted text — multi-line commands, quotes, code — lands as literal
@@ -519,7 +470,17 @@ add-zsh-hook preexec _cc_track
 _zsh_tip() {
   [[ -o interactive ]] || return
   if (( RANDOM % 5 < 3 )) && command -v cc-coach >/dev/null 2>&1; then
-    local nudge; nudge="$(cc-coach --suggest-one 2>/dev/null)"
+    # Cache the coach suggestion per day so cc-coach (a bash script, ~80-130ms)
+    # forks once a day, not every shell start. Date via prompt expansion (no fork).
+    local _cdir="${XDG_CACHE_HOME:-$HOME/.cache}/cc-coach"
+    local _coach_cache="$_cdir/suggest.${(%):-%D{%Y%m%d}}"
+    local nudge
+    if [[ -r "$_coach_cache" ]]; then
+      nudge="$(<"$_coach_cache")"
+    else
+      nudge="$(cc-coach --suggest-one 2>/dev/null)"
+      mkdir -p "$_cdir" && { rm -f "$_cdir"/suggest.*(N); print -r -- "$nudge" >"$_coach_cache"; }
+    fi
     if [[ -n "$nudge" ]]; then
       print -Pn "%F{8}coach%f %F{6}"; print -rn -- "$nudge"
       print -P "%f  %F{8}(coach = scorecard · learn = tour)%f"
@@ -535,3 +496,6 @@ _zsh_tip() {
   print -P "%f  %F{8}(type 'cheat' for the cheatsheet · 'learn' for a tour)%f"
 }
 _zsh_tip
+
+# opencode
+export PATH=/Users/kushrustagi/.opencode/bin:$PATH
