@@ -216,6 +216,7 @@ DOTFILES_TO_LINK=(
   .vimrc
   .wgetrc
   .zprofile
+  .zshenv
   .zshrc
 )
 
