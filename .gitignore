@@ -18,3 +18,8 @@ Thumbs.db
 .gitconfig.local
 Brewfile.local
 .dotfiles-backup/
+
+# Generated local state / backup artifacts
+.config/nvim/lazyvim.json
+claude/hooks/*.bak-handoff-fix
+claude/hooks/__pycache__/

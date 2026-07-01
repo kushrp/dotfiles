@@ -372,6 +372,11 @@ setup_claude() {
   link_file "$DOTFILES/claude/hooks/handoff-threshold-stop.py" "$HOME/.claude/hooks/handoff-threshold-stop.py"
   link_file "$DOTFILES/claude/hooks/handoff-sessionstart.py"   "$HOME/.claude/hooks/handoff-sessionstart.py"
   link_file "$DOTFILES/claude/hooks/handoff-block-running-agents.sh" "$HOME/.claude/hooks/handoff-block-running-agents.sh"
+  link_file "$DOTFILES/claude/hooks/cc-tmux-pane-title.sh"    "$HOME/.claude/hooks/cc-tmux-pane-title.sh"
+  link_file "$DOTFILES/claude/hooks/gt-push-pr-watch.py"      "$HOME/.claude/hooks/gt-push-pr-watch.py"
+  link_file "$DOTFILES/claude/hooks/remind-doc-skills.sh"     "$HOME/.claude/hooks/remind-doc-skills.sh"
+  link_file "$DOTFILES/claude/hooks/require-smell-review-before-push.sh" "$HOME/.claude/hooks/require-smell-review-before-push.sh"
+  link_file "$DOTFILES/claude/hooks/rogo-local-stack-learnings.sh" "$HOME/.claude/hooks/rogo-local-stack-learnings.sh"
   link_file "$DOTFILES/claude/CLAUDE.md"                      "$HOME/.claude/CLAUDE.md"
   # Retire the old notify-stop hook (superseded by cc-status.sh).
   [[ -L "$HOME/.claude/hooks/notify-stop.sh" ]] && rm -f "$HOME/.claude/hooks/notify-stop.sh"
