@@ -394,6 +394,58 @@ setup_claude() {
     || fail "wire-handoff.py"
 }
 
+# Shared agent runtime. Canonical store is ~/.agents (Rogo-Technologies/kush-rogo-skills).
+# Skills, the reviewer agent, Claude hook scripts, and the drift check live there.
+# Vendor bundles (Cloudflare, Remotion) stay untracked in ~/.agents/skills.
+setup_agents() {
+  log "Agent runtime (~/.agents)"
+  local agents="$HOME/.agents"
+  local repo="git@github.com:Rogo-Technologies/kush-rogo-skills.git"
+  if [[ ! -d "$agents/.git" && ! -d "$agents" ]]; then
+    if command -v git >/dev/null 2>&1; then
+      git clone "$repo" "$agents" \
+        && ok "cloned kush-rogo-skills → ~/.agents" \
+        || { fail "clone kush-rogo-skills"; return; }
+    else
+      fail "git missing — cannot clone ~/.agents"
+      return
+    fi
+  elif [[ ! -d "$agents/.git" ]]; then
+    warn "$agents exists without .git — clone $repo over it by hand if this is a fresh machine"
+  fi
+
+  mkdir -p "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.config/opencode/skills" \
+    "$HOME/.grok/skills" "$HOME/.cursor/skills" "$HOME/.hermes/skills" \
+    "$HOME/.claude/agents" "$HOME/.codex/agents" "$HOME/.grok/agents" \
+    "$HOME/.claude/hooks"
+
+  if [[ -x "$agents/bin/sync-skills.sh" ]]; then
+    "$agents/bin/sync-skills.sh" --apply \
+      && ok "skills fanned out to claude/codex/opencode/grok/cursor/hermes" \
+      || fail "sync-skills.sh"
+  else
+    warn "no $agents/bin/sync-skills.sh — pull kush-rogo-skills"
+  fi
+
+  if command -v python3 >/dev/null 2>&1 && [[ -f "$agents/bin/render-codex-agent.py" ]]; then
+    python3 "$agents/bin/render-codex-agent.py" \
+      && ok "reviewer linked (Claude/Grok) + Codex toml generated" \
+      || fail "render-codex-agent.py"
+  fi
+
+  if command -v python3 >/dev/null 2>&1 && [[ -f "$agents/bin/wire-hooks.py" ]]; then
+    python3 "$agents/bin/wire-hooks.py" \
+      && ok "claude-hooks linked + smell-review/deny-view-edits wired" \
+      || fail "wire-hooks.py"
+  fi
+
+  if [[ -x "$agents/bin/drift-check.sh" ]]; then
+    "$agents/bin/drift-check.sh" \
+      && ok "drift-check clean" \
+      || warn "drift-check reported copies that are not symlinks"
+  fi
+}
+
 # AI personas: heavy tool suites kept OUT of the default agent prompt and loaded
 # on demand via launchers (ct/cxt/ot in .zshrc). Single source of truth lives in
 # personas/<name>/; symlinked into each tool's expected location.
@@ -662,6 +714,7 @@ main() {
   setup_llm
   setup_zsh_tips
   setup_claude
+  setup_agents
   setup_personas
   setup_brain
   setup_atuin
