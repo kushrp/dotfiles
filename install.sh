@@ -364,13 +364,12 @@ setup_bin() {
 }
 
 setup_claude() {
-  log "Claude Code (statusline, agent-status hooks, global CLAUDE.md)"
+  log "Claude Code (statusline, settings wiring, global CLAUDE.md)"
+  # Hook scripts are NOT linked here. setup_agents runs first and links every one
+  # of them from ~/.agents/claude-hooks, the single writable copy. Keeping a
+  # second copy in this repo is what let require-smell-review drift back.
   mkdir -p "$HOME/.claude/hooks"
   link_file "$DOTFILES/claude/statusline.sh"                  "$HOME/.claude/statusline.sh"
-  link_file "$DOTFILES/claude/hooks/cc-status.sh"             "$HOME/.claude/hooks/cc-status.sh"
-  link_file "$DOTFILES/claude/hooks/handoff-threshold-stop.py" "$HOME/.claude/hooks/handoff-threshold-stop.py"
-  link_file "$DOTFILES/claude/hooks/handoff-sessionstart.py"   "$HOME/.claude/hooks/handoff-sessionstart.py"
-  link_file "$DOTFILES/claude/hooks/handoff-block-running-agents.sh" "$HOME/.claude/hooks/handoff-block-running-agents.sh"
   link_file "$DOTFILES/claude/CLAUDE.md"                      "$HOME/.claude/CLAUDE.md"
   # Retire the old notify-stop hook (superseded by cc-status.sh).
   [[ -L "$HOME/.claude/hooks/notify-stop.sh" ]] && rm -f "$HOME/.claude/hooks/notify-stop.sh"
@@ -416,12 +415,23 @@ setup_agents() {
 
   mkdir -p "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.config/opencode/skills" \
     "$HOME/.grok/skills" "$HOME/.cursor/skills" "$HOME/.hermes/skills" \
+    "$HOME/.gemini/skills" \
     "$HOME/.claude/agents" "$HOME/.codex/agents" "$HOME/.grok/agents" \
     "$HOME/.claude/hooks"
 
+  # One global instructions file, read under every name each harness looks for.
+  # Grok and Cursor are deliberately absent: Grok loads ~/.claude/CLAUDE.md through
+  # Claude compat and scans ~/.cursor/ the same way, so a file in either place
+  # would load the same rules twice.
+  link_file "$DOTFILES/claude/CLAUDE.md" "$HOME/.claude/AGENTS.md"
+  link_file "$DOTFILES/claude/CLAUDE.md" "$HOME/.codex/AGENTS.md"
+  link_file "$DOTFILES/claude/CLAUDE.md" "$HOME/.config/opencode/AGENTS.md"
+  link_file "$DOTFILES/claude/CLAUDE.md" "$HOME/.gemini/GEMINI.md"
+  link_file "$DOTFILES/claude/forbidden.md" "$HOME/.claude/forbidden.md"
+
   if [[ -x "$agents/bin/sync-skills.sh" ]]; then
     "$agents/bin/sync-skills.sh" --apply \
-      && ok "skills fanned out to claude/codex/opencode/grok/cursor/hermes" \
+      && ok "skills fanned out to claude/codex/opencode/grok/cursor/hermes/gemini" \
       || fail "sync-skills.sh"
   else
     warn "no $agents/bin/sync-skills.sh — pull kush-rogo-skills"
@@ -713,8 +723,8 @@ main() {
   setup_agent_slack
   setup_llm
   setup_zsh_tips
-  setup_claude
   setup_agents
+  setup_claude
   setup_personas
   setup_brain
   setup_atuin

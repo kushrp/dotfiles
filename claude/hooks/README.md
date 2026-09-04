@@ -1,11 +1,13 @@
 # Hook scripts moved
 
-Canonical Claude Code hook scripts live in
-`~/.agents/claude-hooks` (repo `Rogo-Technologies/kush-rogo-skills`).
+Claude Code hook scripts live in `~/.agents/claude-hooks`
+(repo `Rogo-Technologies/kush-rogo-skills`). That is the only copy.
 
-`install.sh` still links `cc-status.sh` and the handoff trio from this
-directory as a bootstrap fallback, then `setup_agents` relinks every
-script from `~/.agents/claude-hooks`.
+`setup_agents()` in `install.sh` runs before `setup_claude()`. It links every
+script from `~/.agents/claude-hooks` into `~/.claude/hooks`, then
+`wire-hooks.py` registers the two gates in `settings.json`. By the time
+`wire-settings.py` and `wire-handoff.py` name a hook path, the script is on disk.
 
-Edit the copy under `~/.agents/claude-hooks`. Do not add new hook bodies
-here.
+This directory holds no hook bodies. A second copy here is what let
+`require-smell-review-before-push.sh` drift back to dotfiles in September.
+Add and edit hooks under `~/.agents/claude-hooks`.
