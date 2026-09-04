@@ -219,13 +219,33 @@ DOTFILES_TO_LINK=(
   .zshrc
 )
 
+CLAUDE_SETTINGS_BACKED_UP=false
+# One copy of settings.json, taken before the first of the three writers runs.
+# Returns non-zero when the copy fails so the caller can stop: wire-hooks.py
+# rebuilds the file from {} on a parse error, so writing without a backup is how
+# a hand-edited settings.json disappears.
+backup_claude_settings() {
+  $CLAUDE_SETTINGS_BACKED_UP && return 0
+  local s="$HOME/.claude/settings.json"
+  if [[ ! -f "$s" ]]; then
+    CLAUDE_SETTINGS_BACKED_UP=true
+    return 0
+  fi
+  ensure_backup_dir
+  cp "$s" "$BACKUP_DIR/claude-settings.json" || return 1
+  CLAUDE_SETTINGS_BACKED_UP=true
+}
+
 link_file() {
   local src="$1" dst="$2"
   if [[ ! -e "$src" ]]; then warn "missing in repo: $src"; return; fi
   if [[ -L "$dst" && "$(readlink "$dst")" == "$src" ]]; then return; fi
   if [[ -e "$dst" || -L "$dst" ]]; then
     ensure_backup_dir
-    mv "$dst" "$BACKUP_DIR/" || { fail "backup $dst"; return; }
+    # Key the backup on the destination path. Several links share a basename
+    # (three AGENTS.md), so a basename key silently keeps only the last one.
+    mv "$dst" "$BACKUP_DIR/$(printf '%s' "${dst#"$HOME"/}" | tr / -)" \
+      || { fail "backup $dst"; return; }
   fi
   mkdir -p "$(dirname "$dst")"
   ln -s "$src" "$dst" || fail "symlink $dst"
@@ -382,7 +402,14 @@ setup_claude() {
     warn "python3 missing — run claude/wire-settings.py against $s manually"
     return
   fi
-  [[ -f "$s" ]] && { ensure_backup_dir; cp "$s" "$BACKUP_DIR/claude-settings.json" 2>/dev/null; }
+  backup_claude_settings || { fail "backup claude settings — settings.json left untouched"; return; }
+  # wire-settings.py and wire-handoff.py name hook paths. Without ~/.agents the
+  # scripts do not exist, and a settings.json full of dead paths errors on every
+  # event, so leave it alone and say why.
+  if [[ ! -e "$HOME/.claude/hooks/cc-status.sh" ]]; then
+    warn "hook scripts absent — clone ~/.agents, then re-run; settings.json left untouched"
+    return
+  fi
   python3 "$DOTFILES/claude/wire-settings.py" "$s" >/dev/null \
     && ok "settings.json: statusLine + agent-status hooks wired" \
     || fail "wire-settings.py"
@@ -444,6 +471,7 @@ setup_agents() {
   fi
 
   if command -v python3 >/dev/null 2>&1 && [[ -f "$agents/bin/wire-hooks.py" ]]; then
+    backup_claude_settings || { fail "backup claude settings — skipping wire-hooks.py"; return; }
     python3 "$agents/bin/wire-hooks.py" \
       && ok "claude-hooks linked + smell-review/deny-view-edits wired" \
       || fail "wire-hooks.py"
