@@ -54,6 +54,29 @@ class SyncAgentToolsTests(unittest.TestCase):
         self.assertIn("CHANGE codex/docs", output)
         self.assertEqual(list(self.home.iterdir()), [self.manifest])
 
+    def test_command_paths_remain_stable_when_shell_path_changes(self):
+        shim = self.write(".local/share/mise/shims/test-mcp", "#!/bin/sh\nexit 0\n")
+        versioned = self.write(".local/share/mise/installs/node/24/bin/test-mcp", "#!/bin/sh\nexit 0\n")
+        for executable in (shim, versioned):
+            executable.chmod(0o755)
+        self.configure({"local": {"transport": "stdio", "command": "test-mcp"}})
+        os.environ["PATH"] = str(shim.parent)
+        result, output = self.run_sync("--apply")
+        self.assertEqual(result, 0, output)
+        os.environ["PATH"] = str(versioned.parent)
+        result, output = self.run_sync("--check")
+        self.assertEqual(result, 0, output)
+        for relative in (".codex/config.toml", ".grok/config.toml"):
+            config = sync.tomllib.loads((self.home / relative).read_text())
+            self.assertEqual(config["mcp_servers"]["local"]["command"], str(shim.resolve()))
+        claude = json.loads((self.home / ".claude.json").read_text())
+        self.assertEqual(claude["mcpServers"]["local"]["command"], str(shim.resolve()))
+
+    def test_explicit_command_path_overrides_managed_search(self):
+        for relative in (".local/share/mise/shims/test-mcp", "custom/test-mcp"):
+            self.write(relative, "#!/bin/sh\nexit 0\n").chmod(0o755)
+        self.assertEqual(sync.resolve_command("~/custom/test-mcp", self.home), str(self.home / "custom/test-mcp"))
+
     def test_apply_is_idempotent_and_preserves_unrelated_config(self):
         codex_text = (
             '# Keep this comment.\nmodel = "test-model"\n'

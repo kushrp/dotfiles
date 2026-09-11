@@ -167,6 +167,18 @@ def local_path(value: str, home: Path) -> str:
     return str(home / value[2:]) if value.startswith("~/") else value
 
 
+def resolve_command(value: str, home: Path) -> str | None:
+    # Interactive mise activation prepends versioned paths; keep stored commands stable.
+    directories = [
+        home / ".local/share/mise/shims", home / ".local/bin", home / ".grok/bin",
+        home / ".bun/bin", home / "bin", Path("/opt/homebrew/bin"),
+        Path("/usr/local/bin"), Path("/usr/bin"), Path("/bin"),
+        Path("/usr/sbin"), Path("/sbin"),
+    ]
+    search_path = os.pathsep.join([*(str(path) for path in directories), os.environ.get("PATH", os.defpath)])
+    return shutil.which(local_path(value, home), path=search_path)
+
+
 def render_servers(servers: dict, home: Path, hostname: str) -> tuple[dict, list[str]]:
     desired = {client: {} for client in CLIENT_PATHS}
     missing = set()
@@ -183,7 +195,7 @@ def render_servers(servers: dict, home: Path, hostname: str) -> tuple[dict, list
             continue
         transport = server["transport"]
         if transport == "stdio":
-            command = shutil.which(local_path(server["command"], home))
+            command = resolve_command(server["command"], home)
             if not command:
                 print(f"SKIP {name}: command is unavailable: {server['command']}")
                 unavailable.append(name)
