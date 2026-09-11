@@ -1,3 +1,7 @@
+typeset -U path PATH
+path=("$HOME/bin" "$HOME/.local/bin" "$HOME/.grok/bin" "$HOME/.bun/bin"
+      "$HOME/.local/share/mise/shims" /opt/homebrew/bin /usr/local/bin $path)
+
 # Load GH_TOKEN from the macOS login Keychain (survives reboots, available to
 # non-interactive shells). Store/update the token with:
 #   security add-generic-password -U -a "$USER" -s gh-token -w
