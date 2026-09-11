@@ -79,6 +79,7 @@ done
 unset file
 
 # --- 4. compinit (fast cold start) -----------------------------------------
+[[ -d "$HOME/.grok/completions/zsh" ]] && fpath=("$HOME/.grok/completions/zsh" $fpath)
 # The slow part of compinit is (a) the fpath security audit (compaudit) and
 # (b) rewriting the dump (compdump). We want both at most once per 24h.
 #
@@ -498,4 +499,17 @@ _zsh_tip() {
 _zsh_tip
 
 # opencode
-export PATH=/Users/kushrustagi/.opencode/bin:$PATH
+export PATH="$HOME/.opencode/bin:$PATH"
+
+
+# Pi
+export PATH="$HOME/.local/share/mise/shims:$PATH"
+
+# bun completions
+[ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
+
+# >>> grok installer >>>
+export PATH="$HOME/.grok/bin:$PATH"
+# <<< grok installer <<<
+
+[[ -r "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"

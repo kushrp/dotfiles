@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "marketplaces": {
+    "compound-engineering-plugin": {
+      "url": "https://github.com/EveryInc/compound-engineering-plugin.git",
+      "sha": "9ac32720f1c52b1fe4e760a79978647d53c9b429"
+    },
+    "claude-plugins-official": {
+      "url": "https://github.com/anthropics/claude-plugins-official.git",
+      "sha": "3b600518a637492d37c9877aeb49c2a55d939c04",
+      "registration_name": "kush-pinned-plugins"
+    }
+  },
+  "plugins": {
+    "compound-engineering": {
+      "marketplace": "compound-engineering-plugin",
+      "version": "3.24.0",
+      "url": "https://github.com/EveryInc/compound-engineering-plugin.git",
+      "sha": "9ac32720f1c52b1fe4e760a79978647d53c9b429"
+    },
+    "figma": {
+      "marketplace": "claude-plugins-official",
+      "version": "2.2.107",
+      "url": "https://github.com/figma/mcp-server-guide.git",
+      "sha": "ae7e5e5f80da20f1dd7445e0c6ae5ac58a5b0bce"
+    },
+    "slack": {
+      "marketplace": "claude-plugins-official",
+      "version": "1.3.0",
+      "url": "https://github.com/slackapi/slack-mcp-plugin.git",
+      "sha": "3d847b94e05a03bf370c3949307cd8d85ca9e56d"
+    },
+    "superpowers": {
+      "marketplace": "claude-plugins-official",
+      "version": "6.3.0",
+      "url": "https://github.com/obra/superpowers.git",
+      "sha": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
+    }
+  }
+}

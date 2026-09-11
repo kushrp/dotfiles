@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "servers": {
+    "notion": {
+      "transport": "http",
+      "url": "https://mcp.notion.com/mcp"
+    },
+    "datadog": {
+      "transport": "http",
+      "url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=core,apm,llmobs,error-tracking"
+    },
+    "linear": {
+      "transport": "http",
+      "url": "https://mcp.linear.app/mcp"
+    },
+    "granola": {
+      "transport": "http",
+      "url": "https://mcp.granola.ai/mcp"
+    },
+    "glean": {
+      "transport": "http",
+      "url": "https://rogo-be.glean.com/mcp/default"
+    },
+    "higgsfield": {
+      "transport": "http",
+      "url": "https://mcp.higgsfield.ai/mcp"
+    },
+    "shrek": {
+      "transport": "http",
+      "url": "https://shrek-mcp.preview.internal.rogo.ai/mcp"
+    },
+    "figma": {
+      "transport": "http",
+      "url": "https://mcp.figma.com/mcp"
+    },
+    "agentation": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "agentation-mcp",
+        "server"
+      ]
+    },
+    "codex": {
+      "transport": "stdio",
+      "command": "codex",
+      "args": [
+        "mcp-server",
+        "-c",
+        "approval_policy=never",
+        "-c",
+        "sandbox_mode=read-only"
+      ],
+      "clients": [
+        "claude",
+        "grok"
+      ]
+    },
+    "brain-vault": {
+      "transport": "stdio",
+      "command": "python3",
+      "args": [
+        "~/Documents/second-brain/brain-mcp-recall.py"
+      ],
+      "requires_paths": [
+        "~/Documents/second-brain/brain-mcp-recall.py",
+        "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Kush's Vault/Kush's vault"
+      ],
+      "hosts": [
+        "rogo-CDVHHFGXPD"
+      ],
+      "skip_reason": "The Obsidian vault is local to the laptop."
+    },
+    "node_repl": {
+      "skip_reason": "Codex installs and configures its own computer-use runtime.",
+      "clients": [
+        "codex"
+      ]
+    },
+    "computer-use": {
+      "skip_reason": "The desktop app configures this local integration.",
+      "clients": [
+        "codex"
+      ]
+    }
+  }
+}

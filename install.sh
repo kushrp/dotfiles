@@ -216,9 +216,25 @@ DOTFILES_TO_LINK=(
   .vimrc
   .wgetrc
   .zprofile
-  .zshenv
   .zshrc
 )
+
+CLAUDE_SETTINGS_BACKED_UP=false
+# One copy of settings.json, taken before the first of the three writers runs.
+# Returns non-zero when the copy fails so the caller can stop: wire-hooks.py
+# rebuilds the file from {} on a parse error, so writing without a backup is how
+# a hand-edited settings.json disappears.
+backup_claude_settings() {
+  $CLAUDE_SETTINGS_BACKED_UP && return 0
+  local s="$HOME/.claude/settings.json"
+  if [[ ! -f "$s" ]]; then
+    CLAUDE_SETTINGS_BACKED_UP=true
+    return 0
+  fi
+  ensure_backup_dir
+  cp "$s" "$BACKUP_DIR/claude-settings.json" || return 1
+  CLAUDE_SETTINGS_BACKED_UP=true
+}
 
 link_file() {
   local src="$1" dst="$2"
@@ -226,7 +242,10 @@ link_file() {
   if [[ -L "$dst" && "$(readlink "$dst")" == "$src" ]]; then return; fi
   if [[ -e "$dst" || -L "$dst" ]]; then
     ensure_backup_dir
-    mv "$dst" "$BACKUP_DIR/" || { fail "backup $dst"; return; }
+    # Key the backup on the destination path. Several links share a basename
+    # (three AGENTS.md), so a basename key silently keeps only the last one.
+    mv "$dst" "$BACKUP_DIR/$(printf '%s' "${dst#"$HOME"/}" | tr / -)" \
+      || { fail "backup $dst"; return; }
   fi
   mkdir -p "$(dirname "$dst")"
   ln -s "$src" "$dst" || fail "symlink $dst"
@@ -358,6 +377,8 @@ setup_bin() {
   local f n=0
   for f in "$DOTFILES"/bin/*; do
     [[ -f "$f" ]] || continue
+    [[ "$f" == *.test.zsh ]] && continue
+    [[ -x "$f" ]] || continue
     link_file "$f" "$HOME/bin/$(basename "$f")"
     n=$((n + 1))
   done
@@ -365,18 +386,12 @@ setup_bin() {
 }
 
 setup_claude() {
-  log "Claude Code (statusline, agent-status hooks, global CLAUDE.md)"
+  log "Claude Code (statusline, settings wiring, global CLAUDE.md)"
+  # Hook scripts are NOT linked here. setup_agents runs first and links every one
+  # of them from ~/.agents/claude-hooks, the single writable copy. Keeping a
+  # second copy in this repo is what let require-smell-review drift back.
   mkdir -p "$HOME/.claude/hooks"
   link_file "$DOTFILES/claude/statusline.sh"                  "$HOME/.claude/statusline.sh"
-  link_file "$DOTFILES/claude/hooks/cc-status.sh"             "$HOME/.claude/hooks/cc-status.sh"
-  link_file "$DOTFILES/claude/hooks/handoff-threshold-stop.py" "$HOME/.claude/hooks/handoff-threshold-stop.py"
-  link_file "$DOTFILES/claude/hooks/handoff-sessionstart.py"   "$HOME/.claude/hooks/handoff-sessionstart.py"
-  link_file "$DOTFILES/claude/hooks/handoff-block-running-agents.sh" "$HOME/.claude/hooks/handoff-block-running-agents.sh"
-  link_file "$DOTFILES/claude/hooks/cc-tmux-pane-title.sh"    "$HOME/.claude/hooks/cc-tmux-pane-title.sh"
-  link_file "$DOTFILES/claude/hooks/gt-push-pr-watch.py"      "$HOME/.claude/hooks/gt-push-pr-watch.py"
-  link_file "$DOTFILES/claude/hooks/remind-doc-skills.sh"     "$HOME/.claude/hooks/remind-doc-skills.sh"
-  link_file "$DOTFILES/claude/hooks/require-smell-review-before-push.sh" "$HOME/.claude/hooks/require-smell-review-before-push.sh"
-  link_file "$DOTFILES/claude/hooks/rogo-local-stack-learnings.sh" "$HOME/.claude/hooks/rogo-local-stack-learnings.sh"
   link_file "$DOTFILES/claude/CLAUDE.md"                      "$HOME/.claude/CLAUDE.md"
   # Retire the old notify-stop hook (superseded by cc-status.sh).
   [[ -L "$HOME/.claude/hooks/notify-stop.sh" ]] && rm -f "$HOME/.claude/hooks/notify-stop.sh"
@@ -389,7 +404,14 @@ setup_claude() {
     warn "python3 missing — run claude/wire-settings.py against $s manually"
     return
   fi
-  [[ -f "$s" ]] && { ensure_backup_dir; cp "$s" "$BACKUP_DIR/claude-settings.json" 2>/dev/null; }
+  backup_claude_settings || { fail "backup claude settings — settings.json left untouched"; return; }
+  # wire-settings.py and wire-handoff.py name hook paths. Without ~/.agents the
+  # scripts do not exist, and a settings.json full of dead paths errors on every
+  # event, so leave it alone and say why.
+  if [[ ! -e "$HOME/.claude/hooks/cc-status.sh" ]]; then
+    warn "hook scripts absent — clone ~/.agents, then re-run; settings.json left untouched"
+    return
+  fi
   python3 "$DOTFILES/claude/wire-settings.py" "$s" >/dev/null \
     && ok "settings.json: statusLine + agent-status hooks wired" \
     || fail "wire-settings.py"
@@ -398,6 +420,70 @@ setup_claude() {
   python3 "$DOTFILES/claude/wire-handoff.py" "$s" >/dev/null \
     && ok "settings.json: handoff Stop + SessionStart(clear) hooks wired" \
     || fail "wire-handoff.py"
+}
+
+# Shared agent runtime. Canonical store is ~/.agents (Rogo-Technologies/kush-rogo-skills).
+# Skills, the reviewer agent, Claude hook scripts, and the drift check live there.
+# Vendor bundles (Cloudflare, Remotion) stay untracked in ~/.agents/skills.
+setup_agents() {
+  log "Agent runtime (~/.agents)"
+  local agents="$HOME/.agents"
+  local repo="git@github.com:Rogo-Technologies/kush-rogo-skills.git"
+  if [[ ! -d "$agents/.git" && ! -d "$agents" ]]; then
+    if command -v git >/dev/null 2>&1; then
+      git clone "$repo" "$agents" \
+        && ok "cloned kush-rogo-skills → ~/.agents" \
+        || { fail "clone kush-rogo-skills"; return; }
+    else
+      fail "git missing — cannot clone ~/.agents"
+      return
+    fi
+  elif [[ ! -d "$agents/.git" ]]; then
+    warn "$agents exists without .git — clone $repo over it by hand if this is a fresh machine"
+  fi
+
+  mkdir -p "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.config/opencode/skills" \
+    "$HOME/.grok/skills" "$HOME/.cursor/skills" "$HOME/.hermes/skills" \
+    "$HOME/.gemini/skills" \
+    "$HOME/.claude/agents" "$HOME/.codex/agents" "$HOME/.grok/agents" \
+    "$HOME/.claude/hooks"
+
+  # One global instructions file, read under every name each harness looks for.
+  # Grok and Cursor are deliberately absent: Grok loads ~/.claude/CLAUDE.md through
+  # Claude compat and scans ~/.cursor/ the same way, so a file in either place
+  # would load the same rules twice.
+  link_file "$DOTFILES/claude/CLAUDE.md" "$HOME/.claude/AGENTS.md"
+  link_file "$DOTFILES/claude/CLAUDE.md" "$HOME/.codex/AGENTS.md"
+  link_file "$DOTFILES/claude/CLAUDE.md" "$HOME/.config/opencode/AGENTS.md"
+  link_file "$DOTFILES/claude/CLAUDE.md" "$HOME/.gemini/GEMINI.md"
+  link_file "$DOTFILES/claude/forbidden.md" "$HOME/.claude/forbidden.md"
+
+  if [[ -x "$agents/bin/sync-skills.sh" ]]; then
+    "$agents/bin/sync-skills.sh" --apply \
+      && ok "skills fanned out to claude/codex/opencode/grok/cursor/hermes/gemini" \
+      || fail "sync-skills.sh"
+  else
+    warn "no $agents/bin/sync-skills.sh — pull kush-rogo-skills"
+  fi
+
+  if command -v python3 >/dev/null 2>&1 && [[ -f "$agents/bin/render-codex-agent.py" ]]; then
+    python3 "$agents/bin/render-codex-agent.py" --apply \
+      && ok "reviewer linked (Claude/Grok) + Codex toml generated" \
+      || fail "render-codex-agent.py"
+  fi
+
+  if command -v python3 >/dev/null 2>&1 && [[ -f "$agents/bin/wire-hooks.py" ]]; then
+    backup_claude_settings || { fail "backup claude settings — skipping wire-hooks.py"; return; }
+    python3 "$agents/bin/wire-hooks.py" --apply \
+      && ok "claude-hooks linked + smell-review/deny-view-edits wired" \
+      || fail "wire-hooks.py"
+  fi
+
+  if [[ -x "$agents/bin/drift-check.sh" ]]; then
+    "$agents/bin/drift-check.sh" \
+      && ok "drift-check clean" \
+      || warn "drift-check reported copies that are not symlinks"
+  fi
 }
 
 # AI personas: heavy tool suites kept OUT of the default agent prompt and loaded
@@ -667,6 +753,7 @@ main() {
   setup_agent_slack
   setup_llm
   setup_zsh_tips
+  setup_agents
   setup_claude
   setup_personas
   setup_brain

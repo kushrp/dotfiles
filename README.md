@@ -1,111 +1,227 @@
 # dotfiles
 
-One-shot, idempotent dotfiles repo. Clone on any Mac (or, soon, any
-Linux box), run `./install.sh`, get a working environment: Homebrew,
-Ghostty, zsh, git, the editor and shell config, plus the GUI apps I rely
-on day to day. Re-run it any time — it backs up before overwriting and
-never silently clobbers a file.
+Run `~/bin/mac-config status` on a configured Mac to check the repositories and agent runtime.
+Use the setup steps below for the first installation.
 
-Forked from [mathiasbynens/dotfiles](https://github.com/mathiasbynens/dotfiles),
-then rewritten around an OS-aware `install.sh`, a declarative `Brewfile`,
-zsh as the primary shell, and `~/.extra` for secrets that should never
-land in git.
+This repo shares shell settings, agent instructions, and tool definitions across Macs.
+The configuration runtime uses the `codex/mac-config-sync` branch in this repo and
+[Rogo-Technologies/kush-rogo-skills](https://github.com/Rogo-Technologies/kush-rogo-skills).
+The separate `install.sh` installs the full workstation package set.
 
----
+## Set up shared configuration
 
-## Quick start (new laptop)
+Start with Git, Python 3.11 or later, and GitHub access on this Mac.
+The branch must exist in both remotes before you use the remote setup commands.
+Sign in to each agent application on each device.
+
+1. Clone the installer branch into an unused directory:
+
+   ```bash
+   git clone --branch codex/mac-config-sync https://github.com/kushrp/dotfiles.git ~/Documents/mac-config-bootstrap
+   ```
+
+2. Create the runtime clones and install the shared configuration:
+
+   ```bash
+   python3 ~/Documents/mac-config-bootstrap/bin/mac-config init \
+     --dotfiles-source https://github.com/kushrp/dotfiles.git \
+     --agents-source git@github.com:Rogo-Technologies/kush-rogo-skills.git \
+     --branch codex/mac-config-sync
+   ```
+
+3. Check the installed links:
+
+   ```bash
+   ~/bin/mac-config status
+   ```
+
+4. Install the shared shell programs after Homebrew is available:
+
+   ```bash
+   ~/bin/mac-config setup-tools
+   ```
+
+5. Apply the configuration again after the programs are available:
+
+   ```bash
+   ~/bin/mac-config install --apply
+   exec zsh -l
+   ```
+
+`init` writes its repository configuration to `~/.local/share/mac-config/config.json`.
+It creates independent clones under `~/.local/share/mac-config/repos/dotfiles` and
+`~/.local/share/mac-config/repos/agents`. The `~/.agents` symlink points to the agents clone.
+
+The installer backs up replaced configuration under
+`~/.local/share/mac-config/backups/<timestamp>/`.
+Conflicting agent files have separate backups under the agents clone's `.skill-sync-backup/`.
+Existing regular `.zshrc` and `.zprofile` files become `.zshrc.local` and `.zprofile.local`.
+If a different local override already exists, reconcile the two files before installing.
+
+`setup-tools` uses `Brewfile.sync` and installs the pinned Node, Bun, and pnpm versions.
+It also prepares the pinned Understand Anything checkout.
+It requires Homebrew and runs for the current user only.
+
+## Receive and publish changes
+
+Run this on either configured Mac to receive committed updates:
 
 ```bash
-# macOS will prompt for Xcode Command Line Tools the first time `git` runs.
+~/bin/mac-config sync
+```
+
+`sync` fetches both configured branches and accepts fast-forward updates only.
+Local changes, an unexpected branch, or diverged history stop synchronization.
+After receiving updates, it applies the links, generated agents, hooks, and tool definitions.
+`status` checks local repository and runtime state; it does not fetch remote updates or test service login.
+After plugin setup, synchronization also applies plugin pins, and status checks their native installation.
+
+Enable receiving every five minutes with:
+
+```bash
+~/bin/mac-config enable-auto-sync
+```
+
+The macOS launch agent also runs when loaded. Its logs are
+`~/.local/share/mac-config/logs/sync.log` and
+`~/.local/share/mac-config/logs/sync-error.log`.
+Background receiving does not publish local edits.
+
+Edit the runtime source, review the diff, and publish explicit repository-relative paths:
+
+```bash
+$EDITOR ~/.local/share/mac-config/repos/dotfiles/.aliases
+git -C ~/.local/share/mac-config/repos/dotfiles diff -- .aliases
+~/bin/mac-config publish dotfiles --message "Add a shell alias" .aliases
+```
+
+For a skill, name its source directory:
+
+```bash
+~/bin/mac-config publish agents --message "Update the review skill" skills/rogo-review
+```
+
+`publish` requires `gitleaks`, rejects existing staged changes, and scans the selected changes before committing.
+It pushes to the configured branch. Publishing the entire repository with `.` is rejected.
+Publishing requires the local commit to equal the fetched remote commit.
+Prior local commits or new remote commits must be reconciled before publishing.
+
+## Shared tools and plugins
+
+| Source | Purpose |
+| --- | --- |
+| `Brewfile.sync` | Shared shell programs installed by `mac-config setup-tools`. |
+| `agent-tools.json` | Model Context Protocol (MCP) definitions for Claude Code, Codex, and Grok. |
+| `agent-plugins.json` | Pinned native plugin versions and marketplace commits for Claude Code and Grok. |
+| Agents repo: `laptop/skill-sources.json` | Names and source paths for shared skills. |
+| Agents repo: `laptop/vendor-skills.lock.json` | File hashes for the bundled vendor skill snapshots. |
+
+Preview tool definitions or check whether local definitions match the manifest:
+
+```bash
+python3 ~/.local/share/mac-config/repos/dotfiles/bin/sync-agent-tools.py
+python3 ~/.local/share/mac-config/repos/dotfiles/bin/sync-agent-tools.py --check
+```
+
+Use `--apply` to write changes. After reviewing a conflicting named server, use
+`--apply --replace-existing` to back it up and adopt the manifest definition.
+The script also accepts `--home`, `--manifest`, and `--hostname`.
+
+The `brain-vault` server applies only to the laptop host `rogo-CDVHHFGXPD`.
+Both required paths must exist on that laptop:
+
+- `~/Documents/second-brain/brain-mcp-recall.py`
+- `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Kush's Vault/Kush's vault`
+
+The manifest skips this server on other hosts. The vault stays on the laptop.
+Codex's desktop computer-use integration remains managed by the desktop app.
+
+Install Claude Code and Grok before setting up their native plugins:
+
+```bash
+~/bin/mac-config setup-plugins
+```
+
+Successful setup enables plugin updates during later `sync` calls and plugin checks during `status` calls.
+If setup reports conflicting Grok copies, review the paths before running `~/bin/mac-config setup-plugins --adopt`.
+
+For a standalone preview, installation, or check, run these commands from the dotfiles runtime clone:
+
+```bash
+cd ~/.local/share/mac-config/repos/dotfiles
+python3 bin/sync-agent-plugins.py
+python3 bin/sync-agent-plugins.py --apply
+python3 bin/sync-agent-plugins.py --check
+```
+
+Running the script without flags previews changes. `--apply` installs the manifest pins through the native plugin commands.
+If the preview reports conflicting Grok copies, review the paths before using `--apply --adopt`.
+That option moves those copies into `~/.local/state/mac-config/plugin-backups/<timestamp>/`.
+The script also accepts `--home` and `--manifest`; its default manifest is this repo's `agent-plugins.json`.
+Start new Claude Code and Grok sessions after installation.
+
+GitHub credentials, agent login, service authorization, and local secrets stay on each device.
+The manifests share definitions and versions. A configuration check does not prove that a service accepts requests.
+
+## Preview or repair installation
+
+```bash
+~/bin/mac-config install
+~/bin/mac-config install --apply
+```
+
+The first command previews links. Installation stops when an unmanaged destination conflicts.
+Review that destination before running `~/bin/mac-config install --apply --adopt` to back it up and replace it.
+Use `~/bin/mac-config status` after repair.
+
+## Full workstation installation
+
+Use `install.sh` for a fresh workstation's full package and application setup.
+Run it before `mac-config init` so the final links point into the shared runtime clones.
+This path also requires macOS and the Xcode Command Line Tools.
+
+```bash
 git clone https://github.com/kushrp/dotfiles.git ~/Documents/dotfiles
 cd ~/Documents/dotfiles
 ./install.sh
 ```
 
-That single command:
+The installer performs these groups of work:
 
-1. Verifies macOS + Xcode CLT are present.
-2. Installs Homebrew (non-interactively) if missing.
-3. Runs `brew bundle` against `Brewfile` — CLI tools, Ghostty, fonts,
-   the GUI apps in my default kit. Also runs `Brewfile.local` if you've
-   created one for personal extras.
-4. Installs Bun via the official installer.
-5. Backs up existing dotfiles to `~/.dotfiles-backup/<timestamp>/`.
-6. Symlinks every shell/tool config into `$HOME` (zsh, git, vim, ghostty,
-   starship, neovim/LazyVim, tmux, atuin, llm, zsh tips).
-7. Clones tpm and installs tmux plugins; installs the `llm-anthropic` plugin.
-8. Sets `node@lts` as the mise global and opts mise into reading `.nvmrc`.
-9. Installs the pre-commit hooks (secret scan + syntax/parse checks) into
-   the repo's `.git/hooks`.
-10. Seeds `~/.extra` from `.extra.example` (the template for secrets +
-    git identity).
-11. Sets zsh as the login shell.
-12. Verifies the whole stack (`verify_stack`) and prints a numbered list of
-    any failures.
+1. Install Homebrew, the `Brewfile` package set, and Bun.
+2. Back up replaced dotfiles to `~/.dotfiles-backup/<timestamp>/` and create configuration links.
+3. Configure the shell, editors, tmux plugins, and agent runtime.
+4. Seed `~/.extra`, install pre-commit hooks, and set zsh as the login shell.
+5. Verify the installed programs and report failures.
 
-After it finishes:
+Finish local identity and authentication setup:
 
 ```bash
-$EDITOR ~/.extra        # set git identity + tokens
-gh auth login           # populates the keychain that .extra reads from
-exec zsh -l             # reload the shell
+$EDITOR ~/.extra
+gh auth login
+exec zsh -l
 ```
 
-Apply macOS system defaults (`.macos` — opinionated and destructive)
-when you're ready:
+`--no-casks` installs formulae without adopting existing applications.
+`--no-brew` skips package installation when you are working on configuration.
+The installer leaves an existing `~/.extra` in place.
+
+Review `.macos` before applying its system defaults. Some settings require a restart.
+After choosing to apply those settings, run:
 
 ```bash
 ./install.sh --with-macos -y
 ```
 
----
+## Local secrets and overrides
 
-## Repo layout
+`~/.extra` holds local tokens and is excluded from Git.
+The full installer creates it from `.extra.example` with mode `600`.
+The shell reads it after the shared settings.
+Use `~/.gitconfig.local` for local Git identity and settings.
+Use `.zshrc.local` and `.zprofile.local` for settings that differ between Macs.
 
-| Path | What it is |
-| --- | --- |
-| `install.sh` | One-shot installer. OS-aware, idempotent, collects failures, prints a summary. |
-| `bootstrap.sh` | Backwards-compatible shim; just execs `install.sh`. |
-| `Brewfile` | Declarative list of brew formulae + casks for macOS. |
-| `Brewfile.local` | (Gitignored.) Personal additions on this machine. Optional. |
-| `.zshrc`, `.zprofile` | zsh login + interactive config. Sources `.aliases`, `.functions`, `.exports`, `.extra`. |
-| `.bash_profile`, `.bashrc`, `.bash_prompt` | bash equivalents, kept for bash sessions. |
-| `.aliases` | Shell aliases (`g=git`, `..`, `update`, etc.) shared between bash and zsh. |
-| `.functions` | Shell functions (`mkd`, `targz`, `server`, `o`, ...). |
-| `.exports` | Env exports common to both shells. |
-| `.gitconfig`, `.gitattributes` | Global git settings. User identity is **not** here — it lives in `~/.extra` so the repo can be shared. |
-| `.vimrc`, `.vim/` | vim config + storage dirs (backups/swaps/undo). |
-| `.tmux.conf`, `.screenrc`, `.inputrc`, `.curlrc`, `.wgetrc`, `.editorconfig` | Tool configs. |
-| `.config/ghostty/config` | Ghostty terminal config (Tokyo Night, JetBrainsMono Nerd Font, perf-tuned). |
-| `.config/starship.toml` | Starship prompt config — Tokyo Night palette, git/lang context. |
-| `.config/nvim/` | Neovim config built on LazyVim. Tokyo Night theme, which-key cheatsheet, telescope/treesitter/lsp/mason wired up. `<space>?` opens `CHEATSHEET.md`. |
-| `.config/nvim/CHEATSHEET.md` | Written cheatsheet for Neovim keymaps; open in-editor with `<space>uc`. |
-| `.tmux.conf`, `.tmux-cheatsheet.md` | tmux config (Tokyo Night, tpm plugins, popups) + the `prefix C-h` cheatsheet popup. |
-| `.config/zsh/tips.txt` | Rotating tip-of-the-day lines printed on new shells. Grow it as you learn. |
-| `.config/atuin/config.toml` | atuin history config (perf-tuned: no startup network check). |
-| `.pre-commit-config.yaml` | Pre-commit hook pipeline (secret scan + syntax/parse checks). |
-| `.gitleaks.toml` | gitleaks rules + allowlist for the secret scanner. |
-| `.github/workflows/install.yml` | CI: runs `install.sh`, pre-commit, and gitleaks on macOS + Linux runners. |
-| `AGENTS.md` | Protocol for an AI agent (Claude Code/Codex/Cursor) to set up a fresh laptop using this repo. |
-| `.extra.example` | Template for `~/.extra`. Copy to `~/.extra` and fill in. |
-| `.macos` | Long script of `defaults write` calls. Opt-in via `install.sh --with-macos`. |
-| `brew.sh` | Legacy upstream brew script. Superseded by `Brewfile`; kept for reference. |
-| `init/` | App config snapshots (Sublime Text prefs, iTerm/Terminal color schemes). |
-| `linux/` | Per-distro package lists for future Linux support. See `linux/README.md`. |
-
----
-
-## How secrets are layered in
-
-Tokens, API keys, and git identity live in **`~/.extra`**, which is:
-
-- Gitignored at the repo level (`.gitignore` includes `.extra`).
-- Created by `install.sh` from `.extra.example` on first run, with
-  `chmod 600`.
-- Sourced **last** by both `.zshrc` and `.bash_profile`, so anything
-  defined there overrides anything in the committed dotfiles.
-
-The pattern for the GitHub token specifically is:
+The GitHub environment variable can read the token from the local keychain:
 
 ```bash
 # ~/.extra
@@ -115,215 +231,90 @@ if command -v gh >/dev/null 2>&1; then
 fi
 ```
 
-`gh` keeps the token in the macOS keychain. Rotating it via `gh auth
-login` automatically refreshes the env var on next shell start — no need
-to edit any file. Literal tokens (`ANTHROPIC_API_KEY`, etc.) can also be
-exported from `~/.extra` for tools that can't read the keychain.
+Run `gh auth login` to replace that token. Reload the shell to use the new value.
+Store personal package additions in the ignored `Brewfile.local`.
+Install those additions with `brew bundle --file=Brewfile.local`.
 
----
+## Repository layout
 
-## Pre-commit safety net
+| Path | Purpose |
+| --- | --- |
+| `bin/mac-config` | Initialize runtime clones, install links, receive updates, and publish named paths. |
+| `install.sh`, `bootstrap.sh` | Full workstation installer and its compatibility entry point. |
+| `Brewfile` | Full macOS package and application set. |
+| `.zshrc`, `.zprofile`, `.zshenv` | Shared zsh configuration. |
+| `.aliases`, `.functions`, `.exports` | Shell aliases, functions, and environment defaults. |
+| `.bash_profile`, `.bashrc`, `.bash_prompt` | Bash configuration. |
+| `.gitconfig`, `.gitattributes` | Shared Git configuration. |
+| `claude/CLAUDE.md`, `claude/forbidden.md` | Shared agent instructions and writing rules. |
+| `.config/ghostty/`, `.config/starship.toml` | Terminal appearance and prompt configuration. |
+| `.config/nvim/`, `.vimrc`, `.vim/` | Neovim and Vim configuration. |
+| `.tmux.conf`, `.tmux-cheatsheet.md` | tmux configuration and its cheatsheet. |
+| `.config/atuin/config.toml`, `.config/zsh/tips.txt` | History configuration and shell tips. |
+| `.pre-commit-config.yaml`, `.gitleaks.toml` | Validation hooks and secret-scanner rules. |
+| `AGENTS.md` | Agent instructions for full workstation setup. |
+| `.macos`, `init/`, `linux/` | Optional system defaults, app snapshots, and Linux package lists. |
 
-`install.sh` runs `pre-commit install`, so every commit to this repo is
-gated by `.pre-commit-config.yaml`. The hooks make it hard to ever leak a
-secret or commit a broken config:
+## Validate changes
 
-- **gitleaks** — scans staged content for real secrets (tokens, keys).
-  Allowlist + custom rules in `.gitleaks.toml`.
-- **block-secret-files** — hard-fails if `.extra`, `.gitconfig.local`, or
-  `Brewfile.local` are ever staged (even with `git add -f`).
-- **no-placeholder-tokens-elsewhere** — `ghp_xxxx…`-style placeholders are
-  only allowed in `.extra.example`; anywhere else fails.
-- **shellcheck** — lints `install.sh` / `bootstrap.sh` / `brew.sh`.
-- **zsh -n** — parse-checks `.zshrc` / `.zprofile`.
-- **ghostty +validate-config**, **nvim --headless**, **brew bundle list**,
-  **check-toml/json/yaml** — every config file must parse.
-- Standard hygiene: trailing whitespace, EOF newline, merge-conflict
-  markers, large files, broken symlinks.
-
-Run them all manually any time:
+The full installer installs the repository's pre-commit hooks.
+Run all configured checks from the repository:
 
 ```bash
 pre-commit run --all-files
 ```
 
-The same hooks run in CI (`.github/workflows/install.yml`) on every push,
-plus a full-history gitleaks scan — so even a `--no-verify` local bypass
-gets caught before merge.
+The hooks check secrets, forbidden local files, shell syntax, configuration parsing, and file hygiene.
+Fix failed hooks before committing. The repository also runs checks in GitHub Actions.
+`mac-config publish` performs a staged secret scan but does not install pre-commit hooks.
 
-Bypass a single hook when you really mean it: `SKIP=hook-id git commit …`.
+## Shell and editor shortcuts
 
----
+| Command or key | Action |
+| --- | --- |
+| `cheat` or `keys` | Show the shell cheatsheet and live aliases. |
+| `coach`, `learn` | Check feature usage or start the interactive tour. |
+| `Ctrl-G` | Insert an editable command from navi. |
+| `help <cmd>` | Show tldr command examples. |
+| tmux `prefix C-h`, `prefix ?` | Open the cheatsheet or show bindings. |
+| Neovim `<space>?`, `<space>uc` | Show keymaps or open the written cheatsheet. |
+| `ai <description>`, `explain <cmd>` | Suggest or explain a shell command through `llm`. |
 
-## Learning & discoverability
+The shell AI helpers need an Anthropic key in `~/.extra` or `llm keys set anthropic`.
+`Ctrl-X Ctrl-A` converts a typed description into a command.
+Shell tips live in `~/.config/zsh/tips.txt`.
 
-The setup is built to teach you as you use it, and to keep a cheatsheet one
-keystroke away everywhere:
+Use `cc <name>` to start Claude Code in a worktree and tmux window.
+The default repository is ask-rogo; set `CC_REPO` to choose another repository.
+`CC_FLAGS= cc <name>` clears the helper's default `--dangerously-skip-permissions` option.
+Use `ccls` to list worktrees, or `ccd` and tmux `prefix a` to open the agent dashboard.
 
-- **`cheat`** (alias `keys`) — colorized cheatsheet of every key, helper, and
-  your live aliases. Type it anytime.
-- **Tip of the day** — each new shell prints one rotating tip from
-  `~/.config/zsh/tips.txt`. Add a line whenever you learn something.
-- **`zsh-you-should-use`** — when you type a command that has an alias, it
-  reminds you of the alias afterward, so you learn your own shortcuts.
-- **`Ctrl-G` (navi)** — interactive, fuzzy cheatsheet that inserts an
-  *editable* command at the prompt. Add cheats under `~/.local/share/navi/`.
-- **`help <cmd>` (tldr/tealdeer)** — real-example man pages instead of walls of text.
-- **tmux** — the status bar always shows `⌃a ? = keys  ⌃a ⌃h = cheatsheet`;
-  `prefix C-h` opens the curated popup, `prefix ?` lists every binding.
-- **Neovim** — press `<space>` and wait: the which-key panel *is* the live
-  cheatsheet. `<space>?` shows all keymaps, `<space>uc` opens the written one.
-  The start screen (snacks dashboard) lists the top keys every launch.
-- **AI in the shell** — `ai <description>` suggests a command, `explain <cmd>`
-  explains one, `Ctrl-X Ctrl-A` turns the typed line into a command, and
-  `… | llm '…'` pipes anything to Claude. Backed by `llm` + `llm-anthropic`
-  (set `ANTHROPIC_API_KEY` in `~/.extra` or run `llm keys set anthropic`).
-
-## Parallel Claude Code agents
-
-Run many agents at once, each isolated, and see/control them from one place:
-
-- **`cc <name>`** — spawn a Claude agent in its own git worktree +
-  tmux window (native `claude --worktree`; branches off main, never merges, so
-  it's Graphite-safe). Cuts the worktree from **ask-rogo** by default, so it
-  works from anywhere (override: `CC_REPO=~/code/other cc <name>`). Runs
-  `--dangerously-skip-permissions` by default (override: `CC_FLAGS= cc <name>`).
-  `ccls` lists them.
-- **Lifecycle:** `cc <name>` → review → **`ccland`** (submits the worktree as a
-  PR via `gt` when the repo is Graphite-initialized, else `git push` + `gh pr
-  create`) → after it merges, **`ccrm <name>`** removes the worktree + branch.
-- **`ccd` / `prefix a`** (or click the status-bar tally) — the agent dashboard:
-  every agent pane across all sessions with a live output preview + git status,
-  sorted so a blocked agent floats to the top. `enter` jump · `^x` kill · `^g`
-  lazygit · `^n` new (type a name first) · `^r` refresh.
-- **Status at a glance** — a Claude hook (`cc-status.sh`) tags each agent pane
-  ⏸ waiting-for-you / 🤖 working / ✅ done; the tmux window list shows a rollup
-  glyph and the status bar tallies them live (`cc-agent-count`). A desktop
-  notification fires when an agent needs you or finishes.
-
-## Learning it (coach + tour)
-
-The setup teaches itself:
-
-- **`coach`** — a scorecard of the power-features, marking what you've used and
-  nudging what you haven't (a `preexec` hook tracks usage automatically).
-- **`learn`** — an interactive, paced tour: each feature explained with a
-  command to try, marked off as you go.
-- **Tip-of-the-day** — every new shell nudges one feature you haven't tried yet
-  (falls back to random tips once you've used them all).
-
-## Shell startup speed
-
-Warm `zsh` startup is ~**0.2s** despite loading mise, starship, atuin,
-direnv, zoxide, fzf-tab, autosuggestions, and syntax highlighting. Two
-tricks keep it fast:
-
-- **Init-script caching** (`.zshrc` section 0): the output of
-  `starship init`, `mise activate`, `zoxide init`, `atuin init`, and
-  `direnv hook` is cached under `~/.cache/zsh-init/` and re-sourced
-  instead of forking each binary on every shell. Caches auto-regenerate
-  when the tool binary or `.zshrc` changes.
-- **Daily `compinit`** — the slow completion-security scan runs at most
-  once every 24h; other starts read the cached dump.
-
-To re-profile after changes: `for i in 1 2 3; do /usr/bin/time -p zsh -i -c exit; done`.
-
----
-
-## Re-running safely
-
-`install.sh` is safe to run repeatedly. On each run it:
-
-- Skips Homebrew if `brew` is already on `$PATH`.
-- Skips already-installed brew formulae/casks (that's `brew bundle`'s
-  default behavior).
-- Skips dotfiles that are already correctly symlinked.
-- Backs up anything it needs to replace to
-  `~/.dotfiles-backup/<timestamp>/`.
-- Leaves `~/.extra` alone if it already exists.
-- Skips `.macos` unless you pass `--with-macos`.
-
-Use `--no-brew` to skip the brew step when iterating on shell config.
-
----
-
-## Adding your own things
-
-- **A new dependency on every machine** → add to `Brewfile`, commit.
-- **A dependency only on this machine** → create `Brewfile.local`
-  (gitignored), `brew bundle --file=Brewfile.local`.
-- **A new secret / token** → add an `export` to `~/.extra`.
-- **A new shell alias or function** → add to `.aliases` / `.functions`
-  (used by both bash and zsh), commit.
-- **A new dotfile to link** → add the filename to `DOTFILES_TO_LINK` in
-  `install.sh`, commit. Keep the list explicit so we don't accidentally
-  link `.ssh/`, `.gnupg/`, etc.
-
----
-
-## Linux support (in progress)
-
-`install.sh` already branches on `$OS` (`macos` vs `linux`) and picks
-the right package manager (`apt`/`dnf`/`pacman`). Starter package lists
-are in `linux/packages.<mgr>.txt`. To finish:
-
-- Add a Ghostty install path (`.deb`/`.rpm`/source).
-- Replace `.macos` for Linux desktop environments (or skip).
-- Pick a font install path.
-
-See `linux/README.md` for details.
-
----
+Review work before running `ccland` to submit a pull request.
+It uses Graphite in Graphite repositories and GitHub commands elsewhere.
+After the pull request merges, `ccrm <name>` removes its worktree and branch.
+The status hooks report waiting, working, and finished agents in tmux.
 
 ## Troubleshooting
 
-- **`brew bundle` failed on casks with "a terminal is required to read
-  the password"** — happens on a machine where the apps were already
-  installed *outside* brew. Brew tries to "adopt" the existing `.app`
-  by `chmod`ing it, which needs sudo. Two ways out:
-  - Run the installer in a real TTY (not via `nohup`/CI) — `install.sh`
-    pre-caches `sudo -v` and the casks will install.
-  - Run with `./install.sh --no-casks` to install formulae only.
-  - **Caveat:** if brew fails to adopt a cask, it can *delete the
-    existing `.app`* (this happened to Cursor during early testing).
-    On a known-clean machine, prefer letting brew install everything
-    from scratch; on a populated machine, use `--no-casks`.
-- **`brew bundle` failed on a single cask** — re-run `install.sh`; the
-  rest of the steps will continue. Or `brew bundle --file=Brewfile`
-  manually to see the failing line. Common cause: a cask was renamed
-  upstream (e.g. `linear-linear` → `linear`).
-- **Commits fail with `gpg failed to sign the data`** — this repo sets
-  `commit.gpgsign = false`. If you set up signing manually somewhere
-  else, override in `~/.extra` or per-repo.
-- **`git status` shows weird unicode filename issues on macOS** —
-  `.gitconfig` already sets `core.precomposeunicode = false`.
-- **Symlinks point to the wrong location** — you ran `install.sh` from a
-  moved clone. Delete the broken symlink and re-run from the new
-  location.
-- **`~/.extra` is sourced but a token isn't picked up** — confirm with
-  `echo $GITHUB_AUTH_TOKEN`. If empty, check `gh auth status` and
-  re-run `exec zsh -l`.
+| Symptom | Action |
+| --- | --- |
+| Synchronization reports local changes | Inspect `git status` in the named runtime clone. Publish intended changes or reconcile them before receiving. |
+| Skill or generated-agent drift | Run `mac-config install` to preview repairs. Apply them and run `mac-config status`. |
+| Cask adoption requests a terminal | Run the full installer in an interactive terminal, or use `./install.sh --no-casks` to preserve existing applications. |
+| A cask fails during the full install | Inspect the named package with `brew bundle --file=Brewfile`; check for a renamed cask. |
+| Git reports a signing failure | Run `git config --show-origin --get-all commit.gpgsign` and correct the responsible local setting. |
+| A GitHub token is unavailable | Run `gh auth status`, sign in if needed, and reload with `exec zsh -l`. |
 
----
+Homebrew adoption failures can remove an existing application during rollback.
+Use `--no-casks` when preserving manually installed applications matters.
 
-## What changed vs. the upstream fork
+The shell caches initialization scripts under `~/.cache/zsh-init/` and limits full completion initialization to once per day.
+Measure startup after configuration changes:
 
-- `install.sh` replaces `bootstrap.sh` (kept as a shim) with idempotent
-  symlinks, OS detection, failure collection, and a backup-before-clobber
-  policy.
-- `Brewfile` replaces the legacy `brew.sh` (still kept around) and uses
-  modern formulae/cask names. The CTF-tool list is gone.
-- zsh is treated as the primary shell. `.zshrc` + `.zprofile` are added
-  and source the shared `.aliases` / `.functions` / `.exports` / `.extra`.
-- Full shell stack: `zsh-autosuggestions`, `zsh-fast-syntax-highlighting`,
-  `fzf` + `fzf-tab` (fuzzy tab + Ctrl-R history), `starship` prompt,
-  `zoxide` (smart `cd`). Lazy-loaded `nvm` so warm shell startup is ~100ms.
-- Ghostty themed Tokyo Night with JetBrainsMono Nerd Font + ligatures.
-- Neovim config built on LazyVim, themed to match, with a `<space>?`
-  cheatsheet binding and which-key as the live menu.
-- `.gitconfig` no longer hardcodes `commit.gpgsign = true` — too easy to
-  break commits on a fresh machine without a key.
-- `~/.extra` is a real file with a real template, not a vague README
-  mention. Identity + tokens live there.
-- `AGENTS.md` brief for AI-assisted setup (Claude Code / Codex / Cursor).
-- `linux/` directory + OS detection scaffolding for future Linux support.
+```bash
+for i in 1 2 3; do /usr/bin/time -p zsh -i -c exit; done
+```
+
+Linux package lists live in [linux/README.md](linux/README.md).
+Ghostty installation, fonts, and desktop defaults still need Linux-specific setup.
+The original dotfiles came from [mathiasbynens/dotfiles](https://github.com/mathiasbynens/dotfiles).

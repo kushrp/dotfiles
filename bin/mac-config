@@ -1,0 +1,412 @@
+#!/usr/bin/env python3
+"""Install and synchronize shared Mac configuration without discarding local work."""
+
+import argparse
+from contextlib import contextmanager
+from datetime import datetime
+import fcntl
+import json
+import os
+from pathlib import Path
+import plistlib
+import shutil
+import subprocess
+import sys
+
+
+LABEL = "local.kush.mac-config-sync"
+SHELL_FILES = (
+    ".aliases", ".bash_profile", ".bash_prompt", ".bashrc", ".curlrc",
+    ".editorconfig", ".exports", ".functions", ".gitattributes", ".gitconfig",
+    ".hushlogin", ".inputrc", ".tmux.conf", ".tmux-cheatsheet.md", ".vimrc",
+    ".zprofile", ".zshenv", ".zshrc",
+)
+TOOL_FILES = (
+    ".config/ghostty/config", ".config/ghostty/shaders", ".config/starship.toml",
+    ".config/bat/config", ".config/bat/themes", ".config/lazygit/config.yml",
+    ".config/nvim", ".config/navi/cheats",
+)
+
+
+class ConfigFailure(Exception):
+    """A configuration operation cannot preserve the current local state."""
+
+
+def run(args, capture=True, timeout=180):
+    result = subprocess.run([str(arg) for arg in args], text=True,
+                            capture_output=capture, timeout=timeout)
+    if result.returncode:
+        detail = (result.stderr or result.stdout or "")[-1200:]
+        raise ConfigFailure(f"{args[0]} failed ({result.returncode}): {detail.strip()}")
+    return result.stdout.strip() if capture else ""
+
+
+def git(repo, *args):
+    return run(["git", "-C", repo, *args])
+
+
+def state_dir(home):
+    return home / ".local/share/mac-config"
+
+
+def read_config(home):
+    path = state_dir(home) / "config.json"
+    try:
+        config = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise ConfigFailure(f"Cannot read {path}: {exc}") from exc
+    if config.get("version") != 1 or set(config.get("repos", {})) != {"dotfiles", "agents"}:
+        raise ConfigFailure(f"Invalid repository configuration: {path}")
+    return config
+
+
+def write_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(value, indent=2) + "\n")
+    temporary.chmod(0o600)
+    temporary.replace(path)
+
+
+@contextmanager
+def locked(home):
+    root = state_dir(home)
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / "lock").open("a") as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ConfigFailure("Another mac-config command is running.") from exc
+        yield
+
+
+def require_clean(repo):
+    if git(repo, "status", "--porcelain", "--untracked-files=all"):
+        raise ConfigFailure(f"Local changes block synchronization: {repo}")
+
+
+def link(source, target, backup, apply):
+    source = source.absolute()
+    if not source.exists():
+        raise ConfigFailure(f"Missing source: {source}")
+    if target.is_symlink() and target.resolve() == source.resolve():
+        return False
+    print(f"LINK {target} -> {source}")
+    if not apply:
+        return True
+    if target.exists() or target.is_symlink():
+        saved = backup / str(target).lstrip("/")
+        saved.parent.mkdir(parents=True, exist_ok=True)
+        if saved.exists() or saved.is_symlink():
+            raise ConfigFailure(f"Backup already exists: {saved}")
+        is_repository = target.is_dir() and not target.is_symlink() and (target / ".git").is_dir()
+        target.rename(saved)
+        if is_repository:
+            try:
+                git(saved, "worktree", "repair")
+            except ConfigFailure:
+                saved.rename(target)
+                git(target, "worktree", "repair")
+                raise
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.symlink_to(source)
+    return True
+
+
+def preserve_local_shell(home, dotfiles, apply):
+    for name in (".zshrc", ".zprofile"):
+        target = home / name
+        if not target.is_file() or target.is_symlink():
+            continue
+        if target.read_bytes() == (dotfiles / name).read_bytes():
+            continue
+        local = home / (name + ".local")
+        if name + ".local" in target.read_text():
+            raise ConfigFailure(f"{target} already references {local}; keep its local settings in that file before installing.")
+        if local.exists() and local.read_bytes() != target.read_bytes():
+            raise ConfigFailure(f"Both {target} and {local} have local settings; reconcile before installing.")
+        print(f"PRESERVE {target} -> {local}")
+        if apply and not local.exists():
+            shutil.copy2(target, local)
+            local.chmod(0o600)
+
+
+def install(home, config, apply, adopt=False, quiet=False):
+    dotfiles = Path(config["repos"]["dotfiles"]["path"])
+    agents = Path(config["repos"]["agents"]["path"])
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S.%f")
+    backup = state_dir(home) / "backups" / stamp
+    sources = [(dotfiles / name, home / name) for name in SHELL_FILES]
+    sources += [(dotfiles / name, home / name) for name in TOOL_FILES if (dotfiles / name).exists()]
+    sources += [(source, home / "bin" / source.name) for source in sorted((dotfiles / "bin").iterdir())
+                if source.is_file() and os.access(source, os.X_OK) and ".test." not in source.name]
+    sources += [(agents, home / ".agents")]
+    instructions = dotfiles / "claude/CLAUDE.md"
+    for name in (".claude/CLAUDE.md", ".claude/AGENTS.md", ".codex/AGENTS.md",
+                 ".config/opencode/AGENTS.md", ".gemini/GEMINI.md"):
+        sources.append((instructions, home / name))
+    sources.append((dotfiles / "claude/forbidden.md", home / ".claude/forbidden.md"))
+    for source, target in sources:
+        if not source.exists():
+            raise ConfigFailure(f"Missing source: {source}")
+        if not adopt and (target.exists() or target.is_symlink()):
+            if not target.is_symlink() or target.resolve() != source.resolve():
+                raise ConfigFailure(f"Unmanaged configuration blocks installation: {target}; use install --adopt to back it up.")
+    preserve_local_shell(home, dotfiles, apply)
+    for source, target in sources:
+        link(source, target, backup, apply)
+    skill_args = ["bash", agents / "bin/sync-skills.sh", "--home", home, "--agents-root", agents]
+    if apply:
+        skill_args.append("--apply")
+        if adopt:
+            skill_args.append("--backup-conflicts")
+    run(skill_args, capture=quiet)
+    if apply:
+        for script in ("render-codex-agent.py", "wire-hooks.py"):
+            args = [sys.executable, agents / "bin" / script, "--home", home, "--agents-root", agents, "--apply"]
+            if adopt:
+                args.append("--backup-conflicts")
+            run(args, capture=quiet)
+        manifest = dotfiles / "agent-tools.json"
+        if manifest.exists():
+            args = [sys.executable, dotfiles / "bin/sync-agent-tools.py", "--home", home,
+                    "--manifest", manifest, "--apply"]
+            if adopt:
+                args.append("--replace-existing")
+            run(args, capture=quiet)
+        write_json(state_dir(home) / "installed.json", {"repos": {
+            name: git(Path(item["path"]), "rev-parse", "HEAD") for name, item in config["repos"].items()}})
+        if backup.exists():
+            print(f"BACKUP {backup}")
+
+
+def initialize(home, args):
+    repos = {}
+    root = state_dir(home)
+    if (root / "config.json").exists():
+        raise ConfigFailure("Configuration already exists; use install or sync.")
+    for name, source in (("dotfiles", args.dotfiles_source), ("agents", args.agents_source)):
+        path = root / "repos" / name
+        if path.exists():
+            require_clean(path)
+            if git(path, "branch", "--show-current") != args.branch:
+                raise ConfigFailure(f"Unexpected existing branch: {path}")
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            run(["git", "clone", "--no-local", "--branch", args.branch, source, path])
+        override = getattr(args, name + "_remote")
+        if override:
+            git(path, "remote", "set-url", "origin", override)
+        repos[name] = {"path": str(path), "branch": args.branch}
+    config = {"version": 1, "repos": repos}
+    write_json(root / "config.json", config)
+    install(home, config, True, adopt=True)
+
+
+def sync(home, config):
+    for item in config["repos"].values():
+        require_clean(Path(item["path"]))
+    updates = []
+    for name, item in config["repos"].items():
+        repo = Path(item["path"])
+        if git(repo, "branch", "--show-current") != item["branch"]:
+            raise ConfigFailure(f"Unexpected branch: {repo}")
+        git(repo, "fetch", "--quiet", "origin", item["branch"])
+        head = git(repo, "rev-parse", "HEAD")
+        remote = git(repo, "rev-parse", "FETCH_HEAD")
+        if head != remote:
+            try:
+                git(repo, "merge-base", "--is-ancestor", head, remote)
+            except ConfigFailure as exc:
+                raise ConfigFailure(f"Local and remote history differ: {repo}; publish or reconcile first.") from exc
+            updates.append((name, repo, remote))
+    for name, repo, revision in updates:
+        git(repo, "merge", "--ff-only", revision)
+        print(f"UPDATED {name} {revision[:12]}")
+    install(home, config, True, quiet=True)
+    if config.get("plugins_enabled"):
+        setup_plugins(home, config, quiet=True)
+
+
+def validate_publish_paths(repo, paths):
+    forbidden = {".extra", ".gitconfig.local", "Brewfile.local", "auth.json", "credentials.json", ".env"}
+    if not paths:
+        raise ConfigFailure("Name the files to publish.")
+    for name in paths:
+        path = Path(name)
+        if (path.is_absolute() or ".." in path.parts or path.name in forbidden
+                or ".git" in path.parts or name.startswith(":")
+                or path.name.startswith(".env.")):
+            raise ConfigFailure(f"Cannot publish this path: {name}")
+        if path == Path("."):
+            raise ConfigFailure("Name individual files or skill folders; do not publish the whole repository.")
+        try:
+            (repo / path).resolve().relative_to(repo.resolve())
+        except ValueError as exc:
+            raise ConfigFailure(f"Path leaves the repository: {name}") from exc
+        if (repo / path).is_dir():
+            for child in (repo / path).rglob("*"):
+                if child.is_file() or child.is_symlink():
+                    validate_publish_paths(repo, [str(child.relative_to(repo))])
+
+
+def publish(config, args):
+    item = config["repos"][args.repo]
+    repo = Path(item["path"])
+    validate_publish_paths(repo, args.paths)
+    if git(repo, "diff", "--cached", "--name-only"):
+        raise ConfigFailure(f"The repository already has staged changes: {repo}")
+    if git(repo, "branch", "--show-current") != item["branch"]:
+        raise ConfigFailure(f"Unexpected branch: {repo}")
+    git(repo, "fetch", "origin", item["branch"])
+    if git(repo, "rev-parse", "FETCH_HEAD") != git(repo, "rev-parse", "HEAD"):
+        raise ConfigFailure(f"Local and remote commits differ: {repo}; sync or review unpublished commits before publishing named files.")
+    if not shutil.which("gitleaks"):
+        raise ConfigFailure("gitleaks is required before publishing. Run mac-config setup-tools.")
+    scanner = ["gitleaks", "git", "--redact"]
+    if (repo / ".gitleaks.toml").is_file():
+        scanner += ["--config", repo / ".gitleaks.toml"]
+    git(repo, "--literal-pathspecs", "add", "--", *args.paths)
+    run([*scanner, "--pre-commit", "--staged", repo])
+    git(repo, "--literal-pathspecs", "commit", "-m", args.message, "--", *args.paths)
+    committed = git(repo, "diff", "--name-only", "-z", "FETCH_HEAD", "HEAD").split("\0")
+    for name in filter(None, committed):
+        validate_publish_paths(repo, [name])
+        if not any(name == str(Path(path)) or name.startswith(str(Path(path)) + "/") for path in args.paths):
+            raise ConfigFailure(f"The commit includes an unselected path: {name}; review it before pushing.")
+    run([*scanner, "--log-opts=FETCH_HEAD..HEAD", repo])
+    git(repo, "push", "origin", f"HEAD:refs/heads/{item['branch']}")
+    print(f"PUBLISHED {args.repo} {git(repo, 'rev-parse', '--short', 'HEAD')}")
+
+
+def setup_tools(home, config):
+    if home != Path.home():
+        raise ConfigFailure("Install programs for the current user only.")
+    brew = shutil.which("brew") or "/opt/homebrew/bin/brew"
+    dotfiles = Path(config["repos"]["dotfiles"]["path"])
+    run([brew, "bundle", "--no-upgrade", "--file", dotfiles / "Brewfile.sync"], capture=False, timeout=1800)
+    mise = shutil.which("mise") or "/opt/homebrew/bin/mise"
+    run([mise, "use", "--global", "node@24.18.0", "bun@1.3.14", "npm:pnpm@10.6.2"], capture=False, timeout=900)
+    run([mise, "reshim"])
+    understand = home / ".understand-anything/repo"
+    revision = "7f5a717694d3a94f19f523b375c777eb21548ff5"
+    if understand.exists():
+        require_clean(understand)
+        if git(understand, "rev-parse", "HEAD") != revision:
+            raise ConfigFailure(f"Understand Anything has a different revision: {understand}; preserve it and review before changing the shared pin.")
+    else:
+        understand.parent.mkdir(parents=True, exist_ok=True)
+        run(["git", "clone", "--no-checkout", "https://github.com/Egonex-AI/Understand-Anything.git", understand])
+        git(understand, "checkout", "--detach", revision)
+    plugin = understand / "understand-anything-plugin"
+    backup = state_dir(home) / "backups" / datetime.now().strftime("%Y%m%dT%H%M%S.%f")
+    link(plugin, home / ".understand-anything-plugin", backup, True)
+    run([mise, "exec", "--", "pnpm", "--dir", understand, "install", "--frozen-lockfile"], capture=False, timeout=1800)
+    run([mise, "exec", "--", "pnpm", "--dir", understand, "--filter", "@understand-anything/core", "build"], capture=False, timeout=900)
+
+
+def auto_sync(home, config):
+    if sys.platform != "darwin" or home != Path.home():
+        raise ConfigFailure("Background sync must be installed for the current macOS user.")
+    root = state_dir(home)
+    logs = root / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    script = Path(config["repos"]["dotfiles"]["path"]) / "bin/mac-config"
+    plist = home / "Library/LaunchAgents" / f"{LABEL}.plist"
+    data = {"Label": LABEL, "ProgramArguments": [sys.executable, str(script), "--home", str(home), "sync"],
+            "StartInterval": 300, "RunAtLoad": True,
+            "EnvironmentVariables": {"PATH": f"{home}/.local/share/mise/shims:{home}/.local/bin:{home}/.grok/bin:{home}/.bun/bin:{home}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+                                     "GIT_TERMINAL_PROMPT": "0"},
+            "StandardOutPath": str(logs / "sync.log"), "StandardErrorPath": str(logs / "sync-error.log")}
+    payload = plistlib.dumps(data)
+    target = f"gui/{os.getuid()}/{LABEL}"
+    loaded = subprocess.run(["launchctl", "print", target], capture_output=True).returncode == 0
+    if plist.exists() and plist.read_bytes() == payload and loaded:
+        print("Background sync already checks every five minutes.")
+        return
+    if loaded:
+        run(["launchctl", "bootout", target])
+    plist.parent.mkdir(parents=True, exist_ok=True)
+    plist.write_bytes(payload)
+    run(["launchctl", "bootstrap", f"gui/{os.getuid()}", plist])
+    print("Background sync checks every five minutes.")
+
+
+def setup_plugins(home, config, adopt=False, quiet=False):
+    dotfiles = Path(config["repos"]["dotfiles"]["path"])
+    args = [sys.executable, dotfiles / "bin/sync-agent-plugins.py", "--home", home,
+            "--manifest", dotfiles / "agent-plugins.json", "--apply"]
+    if adopt or config.get("plugins_adopt"):
+        args.append("--adopt")
+    run(args, capture=quiet, timeout=900)
+    if not config.get("plugins_enabled") or (adopt and not config.get("plugins_adopt")):
+        config["plugins_enabled"] = True
+        config["plugins_adopt"] = bool(adopt or config.get("plugins_adopt"))
+        write_json(state_dir(home) / "config.json", config)
+
+
+def status(home, config):
+    for name, item in config["repos"].items():
+        repo = Path(item["path"])
+        dirty = bool(git(repo, "status", "--porcelain", "--untracked-files=all"))
+        print(f"{name}: {git(repo, 'rev-parse', '--short', 'HEAD')} {'local changes' if dirty else 'clean'} {repo}")
+    agents = Path(config["repos"]["agents"]["path"])
+    run(["bash", agents / "bin/drift-check.sh", "--home", home, "--agents-root", agents], capture=False)
+    if config.get("plugins_enabled"):
+        dotfiles = Path(config["repos"]["dotfiles"]["path"])
+        run([sys.executable, dotfiles / "bin/sync-agent-plugins.py", "--home", home,
+             "--manifest", dotfiles / "agent-plugins.json", "--check"], capture=False)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--home", type=Path, default=Path.home())
+    commands = parser.add_subparsers(dest="command", required=True)
+    init = commands.add_parser("init", help="Create runtime checkouts and preserve the current configuration.")
+    init.add_argument("--dotfiles-source", required=True)
+    init.add_argument("--agents-source", required=True)
+    init.add_argument("--dotfiles-remote")
+    init.add_argument("--agents-remote")
+    init.add_argument("--branch", default="codex/mac-config-sync")
+    installer = commands.add_parser("install", help="Preview local configuration links.")
+    installer.add_argument("--apply", action="store_true")
+    installer.add_argument("--adopt", action="store_true", help="Back up conflicting files before installing shared configuration.")
+    commands.add_parser("sync", help="Receive committed updates without overwriting local changes.")
+    commands.add_parser("status", help="Check repository and skill state.")
+    commands.add_parser("enable-auto-sync", help="Receive updates every five minutes.")
+    commands.add_parser("setup-tools", help="Install shared shell programs and pinned Node/Bun runtimes.")
+    plugins = commands.add_parser("setup-plugins", help="Install pinned Claude and Grok plugins and keep them synchronized.")
+    plugins.add_argument("--adopt", action="store_true", help="Back up conflicting old plugin copies.")
+    sender = commands.add_parser("publish", help="Commit and push only the named configuration files.")
+    sender.add_argument("repo", choices=("dotfiles", "agents"))
+    sender.add_argument("--message", "-m", required=True)
+    sender.add_argument("paths", nargs="+")
+    args = parser.parse_args()
+    home = args.home.expanduser().absolute()
+    try:
+        with locked(home):
+            if args.command == "init":
+                initialize(home, args)
+                return
+            config = read_config(home)
+            if args.command == "install":
+                install(home, config, args.apply, args.adopt)
+            elif args.command == "sync":
+                sync(home, config)
+            elif args.command == "status":
+                status(home, config)
+            elif args.command == "publish":
+                publish(config, args)
+            elif args.command == "setup-tools":
+                setup_tools(home, config)
+            elif args.command == "setup-plugins":
+                setup_plugins(home, config, args.adopt)
+            else:
+                auto_sync(home, config)
+    except (ConfigFailure, OSError, subprocess.TimeoutExpired) as exc:
+        print(f"MAC CONFIG FAILED: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+
+if __name__ == "__main__":
+    main()

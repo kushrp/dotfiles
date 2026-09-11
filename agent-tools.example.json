@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "servers": {
+    "example-docs": {
+      "transport": "http",
+      "url": "https://mcp.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${EXAMPLE_MCP_TOKEN}"
+      },
+      "skip_reason": "Replace the example endpoint before enabling this server."
+    },
+    "example-local": {
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["example-mcp-server"],
+      "env_vars": ["EXAMPLE_API_KEY"],
+      "requires_paths": ["~/Documents/example-project"],
+      "hosts": ["replace-with-your-hostname"],
+      "skip_reason": "This server requires a repository that is available on the selected host."
+    }
+  }
+}
