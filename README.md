@@ -102,8 +102,11 @@ publish or reconcile it, so `autopublish` never rewrites or hides your own work.
 When both Macs commit inside the same interval, the second one merges the shared
 branch before it pushes. When both edited the same file, it stops and notifies instead.
 
-`autosync` notifies once for a given problem and again after six hours. A clean run
-clears the notification state. Run either half by hand:
+`autosync` notifies once for a given problem and again after six hours, and it stays
+quiet when it simply met another command holding the lock. A clean run clears the
+notification state in `~/.local/share/mac-config/alarm.json`. After a tool update, the
+launch agent adopts the command this version installs on its own, so a new Mac needs
+`enable-auto-sync` only once. Run either half by hand:
 
 ```bash
 ~/bin/mac-config autopublish

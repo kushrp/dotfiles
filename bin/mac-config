@@ -278,6 +278,7 @@ def sync(home, config):
     install(home, config, True, quiet=True)
     if config.get("plugins_enabled"):
         setup_plugins(home, config, quiet=True)
+    refresh_agent(home, config)
 
 
 def validate_publish_paths(repo, paths):
@@ -497,7 +498,7 @@ def setup_tools(home, config):
     run([mise, "exec", "--", "pnpm", "--dir", understand, "--filter", "@understand-anything/core", "build"], capture=False, timeout=900)
 
 
-def auto_sync(home, config):
+def auto_sync(home, config, quiet=False):
     if sys.platform != "darwin" or home != Path.home():
         raise ConfigFailure("Background sync must be installed for the current macOS user.")
     root = state_dir(home)
@@ -514,7 +515,8 @@ def auto_sync(home, config):
     target = f"gui/{os.getuid()}/{LABEL}"
     loaded = subprocess.run(["launchctl", "print", target], capture_output=True).returncode == 0
     if plist.exists() and plist.read_bytes() == payload and loaded:
-        print("Background sync already checks every five minutes.")
+        if not quiet:
+            print("Background sync already checks every five minutes.")
         return
     if loaded:
         run(["launchctl", "bootout", target])
@@ -522,6 +524,18 @@ def auto_sync(home, config):
     plist.write_bytes(payload)
     run(["launchctl", "bootstrap", f"gui/{os.getuid()}", plist])
     print("Background sync checks every five minutes.")
+
+
+def refresh_agent(home, config):
+    """Adopt the background command this version installs, after a tool update."""
+    if sys.platform != "darwin" or home != Path.home():
+        return
+    if not (home / "Library/LaunchAgents" / f"{LABEL}.plist").exists():
+        return
+    try:
+        auto_sync(home, config, quiet=True)
+    except (ConfigFailure, OSError, subprocess.TimeoutExpired) as exc:
+        print(f"BACKGROUND SYNC UNCHANGED: {exc}", file=sys.stderr)
 
 
 def setup_plugins(home, config, adopt=False, quiet=False):

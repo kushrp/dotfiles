@@ -293,6 +293,30 @@ class ConfigTests(unittest.TestCase):
                 self.module.alarm(self.home, "another problem")
             self.assertEqual(runner.call_count, 3)
 
+    def background_agent(self, config, command):
+        plist = self.home / "Library/LaunchAgents" / f"{self.module.LABEL}.plist"
+        plist.parent.mkdir(parents=True, exist_ok=True)
+        plist.write_bytes(plistlib.dumps({"Label": self.module.LABEL,
+                                          "ProgramArguments": ["python3", "mac-config", command]}))
+        with patch.object(self.module.Path, "home", return_value=self.home), \
+                patch.object(self.module.sys, "platform", "darwin"), \
+                patch.object(self.module.subprocess, "run", return_value=SimpleNamespace(returncode=0)), \
+                patch.object(self.module, "run") as launchctl:
+            self.module.refresh_agent(self.home, config)
+        return plist, launchctl
+
+    def test_a_tool_update_adopts_the_new_background_command(self):
+        config = {"repos": {"dotfiles": {"path": str(self.home / "dotfiles")}}}
+        plist, launchctl = self.background_agent(config, "sync")
+        self.assertEqual(plistlib.loads(plist.read_bytes())["ProgramArguments"][-1], "autosync")
+        self.assertEqual([call.args[0][1] for call in launchctl.call_args_list], ["bootout", "bootstrap"])
+
+    def test_refresh_leaves_a_mac_without_the_background_agent_alone(self):
+        config = {"repos": {"dotfiles": {"path": str(self.home / "dotfiles")}}}
+        with patch.object(self.module, "auto_sync") as installer:
+            self.module.refresh_agent(self.home, config)
+        installer.assert_not_called()
+
     def run_main(self, *arguments):
         argv = ["mac-config", "--home", str(self.home), *arguments]
         with patch.object(self.module, "alarm") as alarm, \
