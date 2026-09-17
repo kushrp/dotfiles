@@ -293,6 +293,21 @@ class ConfigTests(unittest.TestCase):
                 self.module.alarm(self.home, "another problem")
             self.assertEqual(runner.call_count, 3)
 
+    def run_main(self, *arguments):
+        argv = ["mac-config", "--home", str(self.home), *arguments]
+        with patch.object(self.module, "alarm") as alarm, \
+                patch.object(self.module.sys, "argv", argv):
+            with self.assertRaises(SystemExit):
+                self.module.main()
+        return alarm
+
+    def test_a_lock_collision_does_not_notify(self):
+        with self.module.locked(self.home):
+            self.run_main("autosync").assert_not_called()
+
+    def test_a_stopped_run_notifies(self):
+        self.run_main("autosync").assert_called_once()
+
     def test_a_clean_run_clears_the_alarm(self):
         config = self.repositories()
         self.manifest(config)
