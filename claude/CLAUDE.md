@@ -275,15 +275,38 @@ the same as replying to human reviewers.
 
 ## Second brain
 
-- The Obsidian vault is the only canonical store for durable knowledge: compound
-  learnings, brainstorms, plans, design decisions, and repo notes. Path:
+- The Obsidian vault is the only canonical store for durable documents: designs,
+  brainstorms, plans, proposals, research, decisions, reviews, and compound learnings. Path:
   `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Kush's Vault/Kush's vault`.
   Layout and workflows live in the `brain` skill, sourced from
   `~/Documents/second-brain/`.
-- Run brain recall over `04 - Resources/Compound` before any design, brainstorm,
-  plan, or compound work, so prior decisions surface first.
-- Write every learning, brainstorm, or plan doc into the vault, following the
-  brain skill's compound capture section. Scrub it before you write. This
-  overrides skill defaults that point at repo `docs/` paths.
-- Repo-level knowledge stores are retired as of 2026-06-10: ask-rogo
-  `docs/solutions`, `docs/brainstorms`, and `docs/plans`. Do not recreate them.
+- Load the `brain` skill and recall `04 - Resources/Compound` before writing,
+  revising, or reviewing any durable document. Check existing notes before
+  creating another document about the same subject.
+- Choose the vault destination before drafting. Write brainstorms and requirements
+  under `brainstorms/`, plans under `plans/`, and learnings under `solutions/`.
+  Write designs, proposals, research, and review reports under `notes/<project>/`.
+  These paths are relative to `04 - Resources/Compound`.
+- Revise the canonical vault document in place. Link a review report to the
+  document it reviews. Preserve the source, date, and status. Separate proposed
+  decisions from accepted decisions. Include a plain `description:` in frontmatter.
+- Follow the brain capture flow for every vault write. Scrub secrets before
+  writing. Store durable diagrams and HTML companions beside a linked vault note.
+  Return the canonical note path when the work finishes.
+- Redirect skill and tool outputs to the vault, including document review reports.
+  Do not create durable planning or review stores in repos, worktrees, Desktop,
+  Downloads, or temporary directories. This rule overrides skill output defaults.
+- If a tool requires a local output, import it through the second-brain flow
+  before finishing. Verify the imported content and record its source path.
+  Check for duplicates and filename collisions. Preserve distinct revisions.
+  Do not overwrite an existing note or delete a source without authorization.
+- Keep executable agent instructions, skills, and required project documentation
+  in their required locations. Capture separate design reasoning and durable
+  review findings in the vault. Notion and shared documents are explicit mirrors.
+- If the vault is unavailable, report that limitation. Continue the task with
+  an inline draft or a required tool artifact, labeled as awaiting import.
+  Import that artifact when vault access returns; do not claim capture succeeded.
+- Before finishing document work, verify the canonical note exists, opens, and
+  contains the final version. Check that the task created no unimported durable
+  documents elsewhere. Repo `docs/solutions`, `docs/brainstorms`, and `docs/plans`
+  remain retired as personal knowledge stores.
