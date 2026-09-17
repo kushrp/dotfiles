@@ -85,7 +85,33 @@ Enable receiving every five minutes with:
 The macOS launch agent also runs when loaded. Its logs are
 `~/.local/share/mac-config/logs/sync.log` and
 `~/.local/share/mac-config/logs/sync-error.log`.
-Background receiving does not publish local edits.
+
+## Publish automatically
+
+The launch agent runs `autosync`, which publishes this Mac's allowed edits and then
+receives the other Mac's. `autopublish.json` in this repository lists the paths each
+Mac may commit without review, so both Macs share one list.
+
+Only an edit to a tracked file qualifies. A new file, a deletion, a rename, or a path
+outside the list waits for `publish`, and `autosync` names it in a desktop notification.
+Each automatic commit carries the `Auto-Publish: mac-config` trailer, records the host
+that wrote it, and passes the same `gitleaks` scan as `publish`.
+
+A reviewed commit that you have not pushed stops automatic publication until you
+publish or reconcile it, so `autopublish` never rewrites or hides your own work.
+When both Macs commit inside the same interval, the second one merges the shared
+branch before it pushes. When both edited the same file, it stops and notifies instead.
+
+`autosync` notifies once for a given problem and again after six hours. A clean run
+clears the notification state. Run either half by hand:
+
+```bash
+~/bin/mac-config autopublish
+~/bin/mac-config autosync
+```
+
+`sync` keeps uncommitted work: it accepts fast-forward updates only, and it stops when
+an incoming commit would overwrite a file you are editing, naming that file.
 
 Edit the runtime source, review the diff, and publish explicit repository-relative paths:
 

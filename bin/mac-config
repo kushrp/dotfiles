@@ -12,6 +12,7 @@ import plistlib
 import shutil
 import subprocess
 import sys
+import time
 
 
 LABEL = "local.kush.mac-config-sync"
@@ -26,6 +27,9 @@ TOOL_FILES = (
     ".config/bat/config", ".config/bat/themes", ".config/lazygit/config.yml",
     ".config/nvim", ".config/navi/cheats",
 )
+AUTOPUBLISH_MANIFEST = "autopublish.json"
+AUTO_MARKER = "Auto-Publish: mac-config"
+ALARM_REPEAT = 6 * 60 * 60
 
 
 class ConfigFailure(Exception):
@@ -69,6 +73,8 @@ def write_json(path, value):
 
 
 @contextmanager
+
+
 def locked(home):
     root = state_dir(home)
     root.mkdir(parents=True, exist_ok=True)
@@ -83,6 +89,44 @@ def locked(home):
 def require_clean(repo):
     if git(repo, "status", "--porcelain", "--untracked-files=all"):
         raise ConfigFailure(f"Local changes block synchronization: {repo}")
+
+
+def is_ancestor(repo, candidate, revision):
+    try:
+        git(repo, "merge-base", "--is-ancestor", candidate, revision)
+    except ConfigFailure:
+        return False
+    return True
+
+
+def split_names(output):
+    """Paths from a git command reading --name-only -z, which never quotes them."""
+    return sorted(set(filter(None, output.split("\0"))))
+
+
+def repo_changes(repo):
+    """Tracked files edited in place, and every other uncommitted path."""
+    edited = split_names(git(repo, "diff", "--name-only", "-z", "--diff-filter=M"))
+    unstaged = split_names(git(repo, "diff", "--name-only", "-z"))
+    untracked = split_names(git(repo, "ls-files", "--others", "--exclude-standard", "-z"))
+    return edited, sorted((set(unstaged) - set(edited)) | set(untracked))
+
+
+def incoming_collisions(repo, revision, uncommitted):
+    """Uncommitted paths that the incoming commits would overwrite."""
+    if not uncommitted:
+        return []
+    incoming = split_names(git(repo, "diff", "--name-only", "-z", "HEAD", revision))
+    return sorted(set(incoming) & set(uncommitted))
+
+
+def gitleaks_scanner(repo):
+    if not shutil.which("gitleaks"):
+        raise ConfigFailure("gitleaks is required before publishing. Run mac-config setup-tools.")
+    scanner = ["gitleaks", "git", "--redact"]
+    if (repo / ".gitleaks.toml").is_file():
+        scanner += ["--config", repo / ".gitleaks.toml"]
+    return scanner
 
 
 def link(source, target, backup, apply):
@@ -204,22 +248,26 @@ def initialize(home, args):
 
 
 def sync(home, config):
-    for item in config["repos"].values():
-        require_clean(Path(item["path"]))
     updates = []
     for name, item in config["repos"].items():
         repo = Path(item["path"])
         if git(repo, "branch", "--show-current") != item["branch"]:
             raise ConfigFailure(f"Unexpected branch: {repo}")
+        if git(repo, "diff", "--cached", "--name-only"):
+            raise ConfigFailure(f"Staged changes block synchronization: {repo}")
         git(repo, "fetch", "--quiet", "origin", item["branch"])
         head = git(repo, "rev-parse", "HEAD")
         remote = git(repo, "rev-parse", "FETCH_HEAD")
-        if head != remote:
-            try:
-                git(repo, "merge-base", "--is-ancestor", head, remote)
-            except ConfigFailure as exc:
-                raise ConfigFailure(f"Local and remote history differ: {repo}; publish or reconcile first.") from exc
-            updates.append((name, repo, remote))
+        if head == remote:
+            continue
+        if not is_ancestor(repo, head, remote):
+            raise ConfigFailure(f"Local and remote history differ: {repo}; publish or reconcile first.")
+        edited, review = repo_changes(repo)
+        collisions = incoming_collisions(repo, remote, set(edited) | set(review))
+        if collisions:
+            raise ConfigFailure(f"Uncommitted work blocks incoming changes: {repo}; "
+                                f"publish or reconcile {', '.join(collisions)}.")
+        updates.append((name, repo, remote))
     for name, repo, revision in updates:
         git(repo, "merge", "--ff-only", revision)
         print(f"UPDATED {name} {revision[:12]}")
@@ -261,11 +309,7 @@ def publish(config, args):
     git(repo, "fetch", "origin", item["branch"])
     if git(repo, "rev-parse", "FETCH_HEAD") != git(repo, "rev-parse", "HEAD"):
         raise ConfigFailure(f"Local and remote commits differ: {repo}; sync or review unpublished commits before publishing named files.")
-    if not shutil.which("gitleaks"):
-        raise ConfigFailure("gitleaks is required before publishing. Run mac-config setup-tools.")
-    scanner = ["gitleaks", "git", "--redact"]
-    if (repo / ".gitleaks.toml").is_file():
-        scanner += ["--config", repo / ".gitleaks.toml"]
+    scanner = gitleaks_scanner(repo)
     git(repo, "--literal-pathspecs", "add", "--", *args.paths)
     run([*scanner, "--pre-commit", "--staged", repo])
     git(repo, "--literal-pathspecs", "commit", "-m", args.message, "--", *args.paths)
@@ -277,6 +321,150 @@ def publish(config, args):
     run([*scanner, "--log-opts=FETCH_HEAD..HEAD", repo])
     git(repo, "push", "origin", f"HEAD:refs/heads/{item['branch']}")
     print(f"PUBLISHED {args.repo} {git(repo, 'rev-parse', '--short', 'HEAD')}")
+
+
+def read_autopublish(dotfiles):
+    """Per-repository paths this Mac may commit without review."""
+    path = dotfiles / AUTOPUBLISH_MANIFEST
+    if not path.is_file():
+        return {}
+    try:
+        manifest = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise ConfigFailure(f"Cannot read {path}: {exc}") from exc
+    paths = manifest.get("paths")
+    if manifest.get("version") != 1 or not isinstance(paths, dict):
+        raise ConfigFailure(f"Invalid automatic publication manifest: {path}")
+    for patterns in paths.values():
+        if not isinstance(patterns, list) or not all(isinstance(entry, str) and entry for entry in patterns):
+            raise ConfigFailure(f"Invalid automatic publication manifest: {path}")
+    return paths
+
+
+def selected_paths(names, patterns):
+    """A pattern names one file, or a directory when it ends with a separator."""
+    return sorted(name for name in names
+                  if any(name == entry or (entry.endswith("/") and name.startswith(entry))
+                         for entry in patterns))
+
+
+def automatic_commits(repo, revision):
+    """The local commits this program wrote, or nothing when a person wrote one."""
+    commits = git(repo, "rev-list", f"{revision}..HEAD").split()
+    for commit in commits:
+        if AUTO_MARKER not in git(repo, "log", "-1", "--format=%B", commit):
+            return None
+    return commits
+
+
+def rejoin_remote(repo, revision, uncommitted, host):
+    """Put the automatic commits back on top of the shared branch."""
+    collisions = incoming_collisions(repo, revision, uncommitted)
+    if collisions:
+        raise ConfigFailure(f"Uncommitted work blocks incoming changes: {repo}; "
+                            f"publish or reconcile {', '.join(collisions)}.")
+    try:
+        git(repo, "merge", "--no-edit", "-m", f"config: merge shared configuration on {host}",
+            "-m", AUTO_MARKER, revision)
+    except ConfigFailure:
+        subprocess.run(["git", "-C", str(repo), "merge", "--abort"], capture_output=True)
+        raise
+
+
+def publish_repository(name, item, patterns, host):
+    """Commit and push one repository's allowed edits, and name what needs review."""
+    repo = Path(item["path"])
+    if git(repo, "branch", "--show-current") != item["branch"]:
+        raise ConfigFailure(f"Unexpected branch: {repo}")
+    if git(repo, "diff", "--cached", "--name-only"):
+        raise ConfigFailure(f"Staged changes block automatic publication: {repo}")
+    edited, review = repo_changes(repo)
+    selected = selected_paths(edited, patterns)
+    blocked = sorted(set(review) | (set(edited) - set(selected)))
+    git(repo, "fetch", "--quiet", "origin", item["branch"])
+    remote = git(repo, "rev-parse", "FETCH_HEAD")
+    pending = automatic_commits(repo, remote)
+    if pending is None:
+        raise ConfigFailure(f"Reviewed commits await publication: {repo}; "
+                            "publish or reconcile them before automatic publication continues.")
+    if not selected and not pending:
+        return [], blocked
+    if not is_ancestor(repo, remote, "HEAD"):
+        rejoin_remote(repo, remote, set(edited) | set(review), host)
+    scanner = gitleaks_scanner(repo)
+    if selected:
+        validate_publish_paths(repo, selected)
+        git(repo, "--literal-pathspecs", "add", "--", *selected)
+        run([*scanner, "--pre-commit", "--staged", repo])
+        subject = (f"config: update {selected[0]} on {host}" if len(selected) == 1
+                   else f"config: update {len(selected)} files on {host}")
+        git(repo, "--literal-pathspecs", "commit", "-m", subject,
+            "-m", "\n".join(selected), "-m", AUTO_MARKER, "--", *selected)
+    run([*scanner, f"--log-opts={remote}..HEAD", repo])
+    git(repo, "push", "origin", f"HEAD:refs/heads/{item['branch']}")
+    print(f"PUBLISHED {name} {git(repo, 'rev-parse', '--short', 'HEAD')} {' '.join(selected)}".rstrip())
+    return selected, blocked
+
+
+def autopublish(home, config):
+    """Send this Mac's allowed configuration edits to the shared branches."""
+    manifest = read_autopublish(Path(config["repos"]["dotfiles"]["path"]))
+    host = os.uname().nodename.split(".")[0]
+    review = {}
+    for name, item in config["repos"].items():
+        patterns = manifest.get(name)
+        if not patterns:
+            continue
+        blocked = publish_repository(name, item, patterns, host)[1]
+        if blocked:
+            review[name] = blocked
+    return review
+
+
+def alarm(home, message):
+    """Report a synchronization problem once, and again after ALARM_REPEAT seconds."""
+    state = state_dir(home) / "alarm.json"
+    try:
+        previous = json.loads(state.read_text())
+    except (OSError, ValueError):
+        previous = {}
+    now = time.time()
+    if previous.get("message") == message and now - previous.get("time", 0) < ALARM_REPEAT:
+        return
+    try:
+        write_json(state, {"message": message, "time": now,
+                           "reported": datetime.now().isoformat(timespec="seconds")})
+    except OSError:
+        pass
+    notifier = shutil.which("terminal-notifier")
+    short = " ".join(message.split())[:220]
+    command = ([notifier, "-title", "Mac configuration", "-message", short, "-group", LABEL]
+               if notifier else
+               ["osascript", "-e", "on run argv", "-e",
+                'display notification item 1 of argv with title "Mac configuration"', "-e",
+                "end run", short])
+    subprocess.run(command, capture_output=True)
+
+
+def clear_alarm(home):
+    state = state_dir(home) / "alarm.json"
+    if state.exists():
+        try:
+            state.unlink()
+        except OSError:
+            pass
+
+
+def autosync(home, config):
+    """Publish the allowed local edits, then receive the shared updates."""
+    review = autopublish(home, config)
+    sync(home, config)
+    if not review:
+        clear_alarm(home)
+        return
+    detail = "; ".join(f"{name}: {', '.join(paths)}" for name, paths in sorted(review.items()))
+    print(f"REVIEW {detail}")
+    alarm(home, f"These configuration paths do not sync until you publish or remove them. {detail}")
 
 
 def setup_tools(home, config):
@@ -313,7 +501,7 @@ def auto_sync(home, config):
     logs.mkdir(parents=True, exist_ok=True)
     script = Path(config["repos"]["dotfiles"]["path"]) / "bin/mac-config"
     plist = home / "Library/LaunchAgents" / f"{LABEL}.plist"
-    data = {"Label": LABEL, "ProgramArguments": [sys.executable, str(script), "--home", str(home), "sync"],
+    data = {"Label": LABEL, "ProgramArguments": [sys.executable, str(script), "--home", str(home), "autosync"],
             "StartInterval": 300, "RunAtLoad": True,
             "EnvironmentVariables": {"PATH": f"{home}/.local/share/mise/shims:{home}/.local/bin:{home}/.grok/bin:{home}/.bun/bin:{home}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
                                      "GIT_TERMINAL_PROMPT": "0"},
@@ -372,8 +560,10 @@ def main():
     installer.add_argument("--apply", action="store_true")
     installer.add_argument("--adopt", action="store_true", help="Back up conflicting files before installing shared configuration.")
     commands.add_parser("sync", help="Receive committed updates without overwriting local changes.")
+    commands.add_parser("autopublish", help="Commit and push the changes the shared manifest allows.")
+    commands.add_parser("autosync", help="Publish the allowed changes, then receive committed updates.")
     commands.add_parser("status", help="Check repository and skill state.")
-    commands.add_parser("enable-auto-sync", help="Receive updates every five minutes.")
+    commands.add_parser("enable-auto-sync", help="Publish and receive every five minutes.")
     commands.add_parser("setup-tools", help="Install shared shell programs and pinned Node/Bun runtimes.")
     plugins = commands.add_parser("setup-plugins", help="Install pinned Claude and Grok plugins and keep them synchronized.")
     plugins.add_argument("--adopt", action="store_true", help="Back up conflicting old plugin copies.")
@@ -393,6 +583,10 @@ def main():
                 install(home, config, args.apply, args.adopt)
             elif args.command == "sync":
                 sync(home, config)
+            elif args.command == "autopublish":
+                autopublish(home, config)
+            elif args.command == "autosync":
+                autosync(home, config)
             elif args.command == "status":
                 status(home, config)
             elif args.command == "publish":
@@ -405,6 +599,8 @@ def main():
                 auto_sync(home, config)
     except (ConfigFailure, OSError, subprocess.TimeoutExpired) as exc:
         print(f"MAC CONFIG FAILED: {exc}", file=sys.stderr)
+        if args.command == "autosync":
+            alarm(home, f"Configuration sync stopped. {exc}")
         raise SystemExit(1) from exc
 
 

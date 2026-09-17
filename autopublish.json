@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "comment": "Paths each Mac commits and pushes on its own every five minutes. An entry ending in / covers the directory. Only edits to tracked files qualify: a new file, a deletion or a rename waits for mac-config publish. Installer and security files stay off this list on purpose.",
+  "paths": {
+    "dotfiles": [
+      ".aliases",
+      ".config/",
+      ".curlrc",
+      ".editorconfig",
+      ".exports",
+      ".functions",
+      ".gitattributes",
+      ".gitconfig",
+      ".inputrc",
+      ".tmux-cheatsheet.md",
+      ".tmux.conf",
+      ".vimrc",
+      ".wgetrc",
+      ".zprofile",
+      ".zshenv",
+      ".zshrc",
+      "AGENTS.md",
+      "README.md",
+      "agent-plugins.json",
+      "agent-tools.json",
+      "autopublish.json",
+      "bin/",
+      "claude/",
+      "docs/",
+      "personas/",
+      "tests/"
+    ],
+    "agents": [
+      "agents/",
+      "claude-hooks/",
+      "laptop/",
+      "preferences.md",
+      "skills/",
+      "tests/"
+    ]
+  }
+}

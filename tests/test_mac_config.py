@@ -1,10 +1,12 @@
 import importlib.machinery
 import importlib.util
+import json
 from pathlib import Path
 import plistlib
 import shutil
 import subprocess
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -130,8 +132,10 @@ class ConfigTests(unittest.TestCase):
             source.mkdir()
             self.git(source, "init", "-q", "-b", "test-sync")
             (source / "value").write_text("first")
-            self.git(source, "add", "value")
+            (source / "spare").write_text("first")
+            self.git(source, "add", "value", "spare")
             self.git(source, "commit", "-qm", "first")
+            self.git(source, "config", "receive.denyCurrentBranch", "updateInstead")
             target = self.home / name
             self.git(self.home, "clone", "-q", str(source), str(target))
             config["repos"][name] = {"path": str(target), "branch": "test-sync"}
@@ -152,13 +156,25 @@ class ConfigTests(unittest.TestCase):
         for name in ("dotfiles", "agents"):
             self.assertEqual((self.home / name / "value").read_text(), "second")
 
-    def test_dirty_second_repository_leaves_first_unchanged(self):
+    def test_colliding_second_repository_leaves_first_unchanged(self):
         config = self.repositories()
         self.advance("dotfiles-origin", "second")
-        (self.home / "agents/untracked").write_text("preserved")
+        self.advance("agents-origin", "remote")
+        (self.home / "agents/value").write_text("mid-edit")
         with self.assertRaises(self.module.ConfigFailure):
             self.module.sync(self.home, config)
         self.assertEqual((self.home / "dotfiles/value").read_text(), "first")
+        self.assertEqual((self.home / "agents/value").read_text(), "mid-edit")
+
+    def test_unrelated_uncommitted_work_still_receives_updates(self):
+        config = self.repositories()
+        self.advance("agents-origin", "second")
+        (self.home / "agents/spare").write_text("mid-edit")
+        (self.home / "agents/untracked").write_text("draft")
+        with patch.object(self.module, "install"):
+            self.module.sync(self.home, config)
+        self.assertEqual((self.home / "agents/value").read_text(), "second")
+        self.assertEqual((self.home / "agents/spare").read_text(), "mid-edit")
 
     def test_diverged_second_repository_leaves_first_unchanged(self):
         config = self.repositories()
@@ -179,6 +195,113 @@ class ConfigTests(unittest.TestCase):
             self.module.publish(config, args)
         self.assertEqual((self.home / "agents-origin/value").read_text(), "first")
         self.assertEqual(self.git(self.home / "agents", "diff", "--cached", "--name-only"), "")
+
+
+    def manifest(self, config, **paths):
+        dotfiles = Path(config["repos"]["dotfiles"]["path"])
+        (dotfiles / self.module.AUTOPUBLISH_MANIFEST).write_text(
+            json.dumps({"version": 1, "paths": paths}))
+        return dotfiles
+
+    def autopublish(self, config):
+        """Run automatic publication with a scanner that accepts every change."""
+        with patch.object(self.module, "gitleaks_scanner", return_value=["true"]):
+            return self.module.autopublish(self.home, config)
+
+    def test_allowed_edit_reaches_the_other_mac_without_review(self):
+        config = self.repositories()
+        self.manifest(config, agents=["value"])
+        (self.home / "agents/value").write_text("edited here")
+        self.assertEqual(self.autopublish(config), {})
+        self.assertEqual((self.home / "agents-origin/value").read_text(), "edited here")
+        self.assertIn(self.module.AUTO_MARKER, self.git(self.home / "agents", "log", "-1", "--format=%B"))
+
+    def test_new_and_deleted_files_wait_for_review(self):
+        config = self.repositories()
+        self.manifest(config, agents=["value", "spare"])
+        (self.home / "agents/value").write_text("edited here")
+        (self.home / "agents/added").write_text("draft")
+        (self.home / "agents/spare").unlink()
+        self.assertEqual(self.autopublish(config), {"agents": ["added", "spare"]})
+        self.assertEqual((self.home / "agents-origin/value").read_text(), "edited here")
+        self.assertFalse((self.home / "agents-origin/added").exists())
+        self.assertEqual((self.home / "agents-origin/spare").read_text(), "first")
+
+    def test_unlisted_edit_waits_for_review(self):
+        config = self.repositories()
+        self.manifest(config, agents=["spare"])
+        (self.home / "agents/value").write_text("edited here")
+        self.assertEqual(self.autopublish(config), {"agents": ["value"]})
+        self.assertEqual((self.home / "agents-origin/value").read_text(), "first")
+
+    def test_reviewed_commit_stops_automatic_publication(self):
+        config = self.repositories()
+        self.manifest(config, agents=["value"])
+        (self.home / "agents/spare").write_text("reviewed")
+        self.git(self.home / "agents", "commit", "-qam", "reviewed change")
+        (self.home / "agents/value").write_text("edited here")
+        with self.assertRaises(self.module.ConfigFailure):
+            self.autopublish(config)
+        self.assertEqual((self.home / "agents-origin/value").read_text(), "first")
+
+    def test_simultaneous_edits_on_both_macs_keep_both(self):
+        config = self.repositories()
+        self.manifest(config, agents=["value", "spare"])
+        self.advance("agents-origin", "second")
+        (self.home / "agents/spare").write_text("edited here")
+        self.assertEqual(self.autopublish(config), {})
+        self.assertEqual((self.home / "agents-origin/spare").read_text(), "edited here")
+        self.assertEqual((self.home / "agents/value").read_text(), "second")
+
+    def test_colliding_edit_stops_before_it_overwrites_the_other_mac(self):
+        config = self.repositories()
+        self.manifest(config, agents=["value"])
+        self.advance("agents-origin", "second")
+        (self.home / "agents/value").write_text("edited here")
+        with self.assertRaises(self.module.ConfigFailure):
+            self.autopublish(config)
+        self.assertEqual((self.home / "agents-origin/value").read_text(), "second")
+        self.assertEqual((self.home / "agents/value").read_text(), "edited here")
+        self.assertEqual(self.git(self.home / "agents", "diff", "--name-only"), "value")
+
+    def test_an_unpushed_automatic_commit_is_sent_on_the_next_run(self):
+        config = self.repositories()
+        self.manifest(config, agents=["value"])
+        repo = self.home / "agents"
+        (repo / "value").write_text("edited here")
+        self.git(repo, "commit", "-qam", f"config: update value\n\n{self.module.AUTO_MARKER}")
+        self.assertEqual(self.autopublish(config), {})
+        self.assertEqual((self.home / "agents-origin/value").read_text(), "edited here")
+
+    def test_publication_requires_the_secret_scanner(self):
+        config = self.repositories()
+        self.manifest(config, agents=["value"])
+        (self.home / "agents/value").write_text("edited here")
+        with patch.object(self.module.shutil, "which", return_value=None):
+            with self.assertRaises(self.module.ConfigFailure):
+                self.module.autopublish(self.home, config)
+        self.assertEqual((self.home / "agents-origin/value").read_text(), "first")
+
+    def test_the_alarm_reports_once_until_the_interval_passes(self):
+        with patch.object(self.module.subprocess, "run") as runner:
+            self.module.alarm(self.home, "first problem")
+            self.module.alarm(self.home, "first problem")
+            self.assertEqual(runner.call_count, 1)
+            self.module.alarm(self.home, "another problem")
+            self.assertEqual(runner.call_count, 2)
+            with patch.object(self.module.time, "time", return_value=time.time() + self.module.ALARM_REPEAT + 1):
+                self.module.alarm(self.home, "another problem")
+            self.assertEqual(runner.call_count, 3)
+
+    def test_a_clean_run_clears_the_alarm(self):
+        config = self.repositories()
+        self.manifest(config)
+        with patch.object(self.module.subprocess, "run"):
+            self.module.alarm(self.home, "earlier problem")
+        self.assertTrue((self.home / ".local/share/mac-config/alarm.json").exists())
+        with patch.object(self.module, "install"), patch.object(self.module, "sync"):
+            self.module.autosync(self.home, config)
+        self.assertFalse((self.home / ".local/share/mac-config/alarm.json").exists())
 
 
 if __name__ == "__main__":
