@@ -158,26 +158,6 @@ Writing quality falls sharply as context fills. Hold a hard ceiling.
 - Keep the `rogo-review-rulebook` current from authoritative online sources, not
   from memory. It is the canonical rulebook that every review lens loads.
 
-### Deployment startup check before merge
-
-- Before declaring a deployment-affecting PR merge-ready, check every startup
-  requirement for each affected service and target environment. Include required
-  configuration, secrets, identity permissions, dependency connections, and
-  startup artifacts. Trace the actual startup path, including enabled adapters.
-- Run the check with the candidate image and the deployed worker or service
-  identity. Match the target environment's configuration and mounts. Use a
-  bounded check that does not poll production queues or start business work.
-- Verify secret access without displaying secret values. Exercise initialization
-  that consumes secrets, including payload decryption. Secret existence alone
-  does not prove that startup succeeds.
-- If a requirement fails, tell Kush before merge with a `STARTUP CHECK FAILED`
-  alarm. Name the image digest, environment, identity, failed requirement, and
-  smallest fix. Report all independently checkable failures together.
-- If the candidate image, identity, or environment is unavailable, report
-  `STARTUP CHECK UNVERIFIED` and name the missing verification. Never claim
-  rollout readiness from local tests alone. This agent rule does not install
-  an automatic CI notification or an Argo deployment hook.
-
 ## Git workflow
 
 ### Branches
