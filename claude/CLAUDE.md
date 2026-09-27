@@ -170,6 +170,10 @@ Writing quality falls sharply as context fills. Hold a hard ceiling.
   `gt restack`, and `gt track` to adopt a commit. Never a raw `git rebase`.
 - Keep changes scoped to the current worktree. I run several sessions at once, as
   split panes in one tmux window, and `ccd` or `prefix a` lists them all.
+- Never run `gt sync` without `--no-restack`: by default it restacks every
+  session's branches. To retarget one stack after its base merges, run
+  `gt move --onto main` on its lowest open branch, then `gt submit --stack`. A
+  PreToolUse hook enforces this.
 
 ### Stack shape
 
