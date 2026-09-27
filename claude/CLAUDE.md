@@ -229,6 +229,10 @@ the same as replying to human reviewers.
 - `delegate-to-shrek` hands a stack of work to Shrek. `gt-pr-watch` tracks open
   PRs and their review comments.
 - `brain` recalls and captures durable knowledge. See Second brain below.
+- Run Codex through the `codex` CLI for cross-family reviews and advisor passes:
+  `codex exec "<prompt>" < /dev/null`, then `codex exec resume <session-id>` for
+  a follow-up turn. Do not use a Codex MCP server. It is off in Claude and Codex,
+  because every session started its own copy.
 
 ## Shell environment
 
