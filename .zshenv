@@ -2,18 +2,17 @@ typeset -U path PATH
 path=("$HOME/bin" "$HOME/.local/bin" "$HOME/.grok/bin" "$HOME/.bun/bin"
       "$HOME/.local/share/mise/shims" /opt/homebrew/bin /usr/local/bin $path)
 
-# Load GH_TOKEN from the macOS login Keychain (survives reboots, available to
-# non-interactive shells). Store/update the token with:
+# Load the Bun package token from the macOS login Keychain for all shells.
+# GitHub CLI uses its own saved credential. Store/update the package token with:
 #   security add-generic-password -U -a "$USER" -s gh-token -w
-# Guard against an empty lookup so gh can fall back to its keyring login.
 __gh_token="$(security find-generic-password -a "$USER" -s gh-token -w 2>/dev/null)"
 # GITHUB_AUTH_TOKEN is what bun reads for the @rogo-technologies npm registry
 # (see ask-rogo bunfig.toml). The PAT must include the read:packages scope.
-[ -n "$__gh_token" ] && export GH_TOKEN="$__gh_token" && export GITHUB_AUTH_TOKEN="$__gh_token"
+[ -n "$__gh_token" ] && export GITHUB_AUTH_TOKEN="$__gh_token"
 unset __gh_token
 
 # Personal GitHub account (kushrp). Its token lives in a SEPARATE Keychain slot so
-# it never clobbers the work GH_TOKEN above. Store/update it (paste at the hidden
+# it never clobbers the work package token. Store/update it (paste at the hidden
 # prompt) with:
 #   security add-generic-password -U -a "$USER" -s gh-token-kushrp -w
 # Then use `ghk ...` exactly like `gh ...` for anything under the kushrp account
