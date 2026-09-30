@@ -1,0 +1,41 @@
+#!/bin/zsh
+# Share Claude desktop sessions across every signed-in account and org.
+# The app keeps one folder per login, claude-code-sessions/<accountId>/<orgId>/,
+# and refuses to save into a symlinked folder (ENOTDIR), so the folders stay
+# real and this copies session records between them: the newest copy of each
+# local_<id>.json wins, and a deleted_<id> tombstone anywhere removes that
+# session everywhere. scheduled-tasks.json stays per login on purpose.
+setopt null_glob pipe_fail
+sessions="${CLAUDE_SESSIONS_DIR:-$HOME/Library/Application Support/Claude/claude-code-sessions}"
+[[ -d "$sessions" ]] || { print -u2 "claude-share-sessions: $sessions missing"; exit 1; }
+
+dirs=()
+for d in "$sessions"/*/*; do
+  if [[ -L "$d" ]]; then print -u2 "claude-share-sessions: skipping symlink ${d#$sessions/}"; continue; fi
+  [[ -d "$d" ]] && dirs+=("$d")
+done
+(( ${#dirs} > 1 )) || { print "claude-share-sessions: ${#dirs} folder(s), nothing to share"; exit 0; }
+
+typeset -A tombstone newest
+for d in "${dirs[@]}"; do
+  for t in "$d"/deleted_*; do tombstone[${${t:t}#deleted_}]="$t"; done
+  for f in "$d"/local_*.json; do
+    id=${${${f:t}#local_}%.json}
+    [[ -z ${newest[$id]} || "$f" -nt "${newest[$id]}" ]] && newest[$id]="$f"
+  done
+done
+
+copied=0 removed=0
+atomic_copy() { local tmp="$2:h/.claude-share-$$"; cp -p "$1" "$tmp" && mv -f "$tmp" "$2"; }
+for d in "${dirs[@]}"; do
+  for id src in "${(@kv)tombstone}"; do
+    [[ -e "$d/deleted_$id" ]] || atomic_copy "$src" "$d/deleted_$id"
+    [[ -e "$d/local_$id.json" ]] && { rm -f "$d/local_$id.json"; (( removed++ )) || true; }
+  done
+  for id src in "${(@kv)newest}"; do
+    [[ -n ${tombstone[$id]} ]] && continue
+    dest="$d/local_$id.json"
+    if [[ ! -e "$dest" || "$src" -nt "$dest" ]]; then atomic_copy "$src" "$dest" && (( copied++ )) || true; fi
+  done
+done
+print "claude-share-sessions: ${#dirs} folders, ${#newest} sessions, ${#tombstone} deleted, $copied copies, $removed removals"
