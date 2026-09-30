@@ -79,9 +79,15 @@ done
 unset file
 
 # --- 4. compinit (fast cold start) -----------------------------------------
+typeset -U fpath
 [[ -d "$HOME/.grok/completions/zsh" ]] && fpath=("$HOME/.grok/completions/zsh" $fpath)
 # The slow part of compinit is (a) the fpath security audit (compaudit) and
 # (b) rewriting the dump (compdump). We want both at most once per 24h.
+#
+# Homebrew leaves /opt/homebrew/share group-writable (admin). The user's
+# primary group is staff, so a full audit prompts. Non-interactive shells
+# cannot answer, abort, and unfunction compdef. -u uses the directories
+# without prompting. chmod g-w on that dir is the perm fix; brew restores 775.
 #
 # The naive `[[ -n $dump(#qN...) ]]` test is BROKEN: when the glob matches
 # nothing it expands to zero words, and `[[ -n ]]` with no operand is *true* —
@@ -97,7 +103,7 @@ _zcompdump="${ZDOTDIR:-$HOME}/.zcompdump"
   if (( $# )); then
     compinit -C -d "$_zcompdump"          # fresh dump (<24h): skip audit, just load
   else
-    compinit -d "$_zcompdump"             # stale/missing: full audit + rebuild dump
+    compinit -u -d "$_zcompdump"          # stale/missing: no insecure prompt, rebuild
   fi
 } ${_zcompdump}(N.mh-24)
 # Compile the dump to bytecode so the next `source` of it is a fast mmap.

@@ -158,6 +158,13 @@ Writing quality falls sharply as context fills. Hold a hard ceiling.
 - Keep the `rogo-review-rulebook` current from authoritative online sources, not
   from memory. It is the canonical rulebook that every review lens loads.
 
+### Infrastructure
+
+Prefer Terraform for infrastructure creation, updates, and deletion whenever the
+provider supports them. Use the existing infrastructure repository and deployment
+workflow so changes stay reviewed, reproducible, and tracked in state. Use manual
+changes only when Terraform cannot support the operation or I explicitly request them.
+
 ## Git workflow
 
 ### Branches
@@ -216,6 +223,15 @@ always matches the current state. Use `gh pr edit <n> --body` or `gt submit
 
 Writing and updating a PR's own description is authorized and expected. It is not
 the same as replying to human reviewers.
+
+### PR links
+
+- Link every PR with Graphite only:
+  `https://app.graphite.com/github/pr/Rogo-Technologies/ask-rogo/<n>`. Never use a
+  GitHub PR URL, and never leave a bare `#<n>` unlinked.
+- Show related PRs as one stack, base to tip: `main → #A → #B`.
+- If a change has no Graphite PR, such as a direct commit, say so. Do not give a
+  GitHub link in its place.
 
 ### Never reply to humans
 
