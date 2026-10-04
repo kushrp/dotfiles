@@ -283,6 +283,9 @@ those myself.
 ### Approvals
 
 - Folding work into an already-approved PR is a normal move. Do it when I ask.
+- Fold only into PRs I authored (`kush-rogo`), open or closed, unmerged, with an
+  approval GitHub counts. Never use anyone else's PR, even a closed one. If I
+  have no such PR, draft a review request for me instead.
 - Never treat an approval as stale or wiped by new commits, and never warn me
   that a reviewer has not seen the new diff.
 - Never ask me to ask a teammate for a re-review, and never draft that message.
