@@ -190,7 +190,8 @@ result.
 
 Be computer-use first. Before you tell me to click, paste, approve, or open
 something, do it yourself with computer use or browser use. Hand me a step only
-when no tool you have can do it.
+when no tool you have can do it. Take control of the screen without asking
+first, even while I am using it.
 
 ### Kargo login
 
