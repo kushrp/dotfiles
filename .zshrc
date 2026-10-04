@@ -519,3 +519,6 @@ export PATH="$HOME/.grok/bin:$PATH"
 # <<< grok installer <<<
 
 [[ -r "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
+
+# OpenClaw Completion
+[ -f '/Users/kushrustagi/.openclaw/completions/openclaw.zsh' ] && source '/Users/kushrustagi/.openclaw/completions/openclaw.zsh'
