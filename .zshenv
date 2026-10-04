@@ -25,3 +25,7 @@ ghk() { GH_TOKEN="$(security find-generic-password -a "$USER" -s gh-token-kushrp
 # .zshrc (where it was previously set). Known false-positive from several tools
 # registering precmd/chpwd hooks — see .zshrc §6.
 export _ZO_DOCTOR=0
+
+# Snowflake SSO (externalbrowser) logins open in the background and their leftover
+# tabs close themselves. Other URLs open normally. The script is local to the Mac mini.
+[ -x "$HOME/.local/bin/snowflake-sso-browser" ] && export BROWSER="$HOME/.local/bin/snowflake-sso-browser"

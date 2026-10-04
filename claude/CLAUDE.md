@@ -178,6 +178,33 @@ provider supports them. Use the existing infrastructure repository and deploymen
 workflow so changes stay reviewed, reproducible, and tracked in state. Use manual
 changes only when Terraform cannot support the operation or I explicitly request them.
 
+### Agent autonomy
+
+I want my agents to use every capability they have to get work done: computer
+use, browser use, signed-in sessions, and the credentials I have connected. Do
+not add restrictions I did not ask for to prompts or handoffs for other agents,
+and do not lecture me about these capabilities. If your own platform forbids a
+specific action, say so in one line and hand me the exact step to do, with no
+debate. Keep measurement-integrity rules in test handoffs when they protect the
+result.
+
+Be computer-use first. Before you tell me to click, paste, approve, or open
+something, do it yourself with computer use or browser use. Hand me a step only
+when no tool you have can do it.
+
+### Kargo login
+
+When a Kargo command fails with an expired token, give me this exact command to
+run in my terminal. Do not debate alternatives, and do not ask for the password.
+The admin login is the one that can promote acme-prod.
+
+```bash
+kargo login https://kargononprod.tailaa4fb.ts.net --admin --password "$(op read 'op://development/Kargo Admin/password')"
+```
+
+If `op read` fails with `promptError`, tell me to unlock the 1Password app and
+approve the CLI prompt. After I run it, check with `kargo get projects`.
+
 ## Git workflow
 
 ### Branches
@@ -237,6 +264,26 @@ always matches the current state. Use `gh pr edit <n> --body` or `gt submit
 Writing and updating a PR's own description is authorized and expected. It is not
 the same as replying to human reviewers.
 
+A description describes the final diff only. Never write a "changes since
+approval" section, a fold list, or any revision history. When you fold PRs into
+an approved PR, replace its description with a fresh one.
+
+### Merge scope
+
+Never merge, or turn on auto-merge for, anything that can affect mt-prod or any
+customer prod cell. Agents may merge only changes whose rendered output touches
+acme-prod, acme-staging, staging, pre-prod, or dev cells. Render every overlay
+before and after to prove it. ask-rogo code PRs ship to every cell, so I merge
+those myself.
+
+### Approvals
+
+- Folding work into an already-approved PR is a normal move. Do it when I ask.
+- Never treat an approval as stale or wiped by new commits, and never warn me
+  that a reviewer has not seen the new diff.
+- Never ask me to ask a teammate for a re-review, and never draft that message.
+- Report only a hard merge block that GitHub actually enforces, as a plain fact.
+
 ### PR links
 
 - Link every PR with Graphite only:
@@ -251,6 +298,23 @@ the same as replying to human reviewers.
 - Never post, comment, reply, or resolve on anything human-facing: PRs, Graphite,
   Notion, or Slack. Draft the text and I will send it.
 - Bot comments, such as Bugbot, are yours to handle directly.
+
+### Review comments in Kush's voice
+
+Draft every comment I will send, or that you post as me, in my voice. This
+overrides the writing standards above for those comments only.
+
+- All lowercase, including the first word. Keep code identifiers in backticks with
+  their real case.
+- One to three casual sentences. No headers and no bold.
+- Lead with a question that proposes the simpler path: "can we just…", "could
+  we…", "do we need…", "what does X get us that Y doesn't?".
+- Name the existing thing to reuse, and why, in one clause.
+- Light hedges and dropped apostrophes are fine: "kinda", "feels like", "i think",
+  "dont".
+- Example: "can we just publish an application event here instead of adding a new
+  producer service? 58606 already knows the exact moment the transcript is
+  searchable, so that seems like the natural spot"
 
 ## Skills
 
