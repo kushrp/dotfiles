@@ -135,6 +135,19 @@ Writing quality falls sharply as context fills. Hold a hard ceiling.
   a workaround, or a deliberate tradeoff. Never narrate the change.
 - Report failures plainly. If a test fails or you skipped a step, say so.
 
+### Ponytail
+
+- Write code in ponytail mode (full level). The `ponytail` plugin loads it in
+  Claude Code and Codex on both Macs. Before you build anything, go down its
+  ladder in order: skip it if unneeded, reuse existing code, use the standard
+  library, use a platform feature, use an installed dependency, then write the
+  minimum.
+- Run `ponytail-review` on a diff before the pre-push gate, and `ponytail-audit`
+  when asked where code can shrink.
+- Repository rules win over ponytail. In ask-rogo, a vetted library beats
+  hand-rolled text or data handling, and new TypeScript is written in Effect
+  with typed errors, even when that adds lines.
+
 ### Types and errors
 
 - `unknown` is a smell unless it sits at an input boundary you narrow right away,
@@ -249,6 +262,9 @@ the same as replying to human reviewers.
 - `delegate-to-shrek` hands a stack of work to Shrek. `gt-pr-watch` tracks open
   PRs and their review comments.
 - `brain` recalls and captures durable knowledge. See Second brain below.
+- Use Claude Code for all Anthropic model calls and Codex for all OpenAI model calls.
+  Do not call their APIs directly from scripts or other model clients.
+  Keep the same account and resume the same session for follow-up reviews.
 - Run Codex through the `codex` CLI for cross-family reviews and advisor passes:
   `codex exec "<prompt>" < /dev/null`, then `codex exec resume <session-id>` for
   a follow-up turn. Do not use a Codex MCP server. It is off in Claude and Codex,
@@ -276,6 +292,10 @@ the same as replying to human reviewers.
   the shared lock or timeout. A stale lock exits 69 and requires manual review.
 - Before any synthetic load process starts, install an `EXIT INT TERM HUP` trap
   that terminates every spawned process.
+- A trap that signals its own process group must clear itself first:
+  `trap - EXIT INT TERM HUP` before `kill 0`. Otherwise `kill 0` re-triggers the
+  trap forever. On 2026-09-30, eight such scripts grew to 37 GB each and hung the
+  Mac mini. Stop a looping script with `kill -9`.
 
 ## Second brain
 
@@ -300,6 +320,10 @@ the same as replying to human reviewers.
 - Redirect skill and tool outputs to the vault, including document review reports.
   Do not create durable planning or review stores in repos, worktrees, Desktop,
   Downloads, or temporary directories. This rule overrides skill output defaults.
+- Keep every raw design doc and review in the vault for good, including after the
+  living brain ingests it. Ingestion reads a note; it never replaces or deletes it.
+  Raw chat transcripts are the exception: they may move to the raw archive
+  (`~/.brain-raw-archive`) behind a hash-checked vault stub.
 - If a tool requires a local output, import it through the second-brain flow
   before finishing. Verify the imported content and record its source path.
   Check for duplicates and filename collisions. Preserve distinct revisions.
