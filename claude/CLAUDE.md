@@ -171,6 +171,8 @@ Writing quality falls sharply as context fills. Hold a hard ceiling.
   (`apps/backend`, `apps/rogo-agent`, `apps/frontend`, `packages/*`). It carries
   the patterns Rogo reviewers flag that lint does not catch: tenant scoping,
   error handling, reuse, naming, transactions, and scope discipline.
+- Run the `review-by-georg` skill on every ask-rogo PR before you push it, and
+  list it in the PR's Test Evidence. Georg asks for it on every PR he reviews.
 - Keep the `rogo-review-rulebook` current from authoritative online sources, not
   from memory. It is the canonical rulebook that every review lens loads.
 
@@ -198,16 +200,44 @@ first, even while I am using it.
 
 ### Kargo login
 
-When a Kargo command fails with an expired token, give me this exact command to
-run in my terminal. Do not debate alternatives, and do not ask for the password.
+When a Kargo command fails with an expired token, run this exact command in
+your terminal. Credential refresh and existing 1Password CLI approvals are
+authorized. Do not ask me to run the command or provide the Kargo password.
 The admin login is the one that can promote acme-prod.
 
 ```bash
 kargo login https://kargononprod.tailaa4fb.ts.net --admin --password "$(op read 'op://development/Kargo Admin/password')"
 ```
 
-If `op read` fails with `promptError`, tell me to unlock the 1Password app and
-approve the CLI prompt. After I run it, check with `kargo get projects`.
+If `op read` fails with `promptError`, use computer use to unlock 1Password and
+approve the CLI prompt, then retry. Verify with `kargo get projects` before
+resuming the blocked task. Never print, log, or save the password.
+
+1. For a locked Rogo account, select “Sign in with Okta” in 1Password.
+   Use the signed-in browser or a code I provide. Complete every required
+   factor; accepting a code can lead to another verification prompt.
+2. If FastPass reports blocked device access, allow “Apps on device” for
+   `rogo.okta.com` in the browser's site permissions, then retry.
+3. Ask me only for a required factor your tools cannot complete, such as a
+   phone approval when iPhone Mirroring cannot connect. Finish the remaining
+   login yourself. Login does not authorize a promotion.
+
+### gcloud login
+
+When a `gcloud` or `kubectl` command fails with "Reauthentication failed", sign
+in yourself. Do not ask me to run the login.
+
+1. Run `gcloud auth login` in the background. It opens the default browser and
+   listens on `localhost:8085`.
+2. Use computer use in that browser window and click the `kush@rogo.ai`
+   account. Okta finishes the sign-in in that window. If your own computer use
+   is unavailable or cannot click the browser, ask Codex to do it:
+   `codex exec --dangerously-bypass-approvals-and-sandbox "<steps>" < /dev/null`.
+   Codex has its own computer use plugin. Give it the auth URL and the steps.
+3. Verify with one read, such as `kubectl get pods`, before you resume.
+
+Do not drive this login from a Claude-in-Chrome tab group. On 2026-10-05 the
+Okta page there timed out on every reload.
 
 ## Git workflow
 
@@ -280,6 +310,45 @@ acme-prod, acme-staging, staging, pre-prod, or dev cells. Render every overlay
 before and after to prove it. ask-rogo code PRs ship to every cell, so I merge
 those myself.
 
+### PR watch and auto-fix
+
+Every PR you or your agents publish gets a watcher right away. Do not wait for
+me to ask. Follow Kun Chen's repair loop (the `no-mistakes` CI repair stage):
+
+1. Watch CI and review comments with the `gt-pr-watch` skill. Poll GitHub at
+   most every 15 minutes, because the kush-rogo rate limit is shared.
+2. Reproduce each finding or CI failure before you repair it. Fix clear
+   in-scope bugs in the PR that introduced the code, validate, re-gate, and
+   push through Graphite. A repair must build on the head already reviewed.
+3. Reply to bot comments and resolve them yourself. For human comments, fix
+   the code when the fix is clear and draft the reply for me.
+4. Send ambiguous product or architecture decisions to me with the concrete
+   tradeoff. Use a Lavish review page (`lavish-axi`) when the decision needs
+   visuals.
+5. Stop re-reviewing once findings are resolved, unless a new change warrants
+   another pass.
+
+### Merge safety
+
+Before any merge, prove it cannot break a deploy pipeline such as Spacelift,
+Argo CD, Kargo, or External Secrets. This applies to every repo and to
+every PR you merge or prepare for me to merge.
+
+1. Check that everything the change references already exists in every target
+   cell: secrets, topics, subscriptions, IAM grants, and images. Check with
+   `gcloud` or `kubectl`, not the PR description. Infrastructure applies before
+   the config that uses it. Honor any prerequisites the PR itself lists.
+2. Spacelift: read the plan for every affected stack. Expect no destroys or
+   replacements you did not intend. Check for older unconfirmed runs ahead in
+   the queue, because one blocks every later run.
+3. Argo CD and Kargo: render every overlay before and after the change. Confirm
+   the affected apps would stay Healthy and Synced.
+4. After the merge, watch the rollout until pods are Ready, apps are Healthy,
+   and applies finish. If anything degrades, revert first and debug second.
+
+On 2026-10-06, rogo-ops #4199 merged before its Gmail topic and OAuth secrets
+existed. It degraded five Argo CD apps across the acme, dev, and staging cells.
+
 ### Approvals
 
 - Folding work into an already-approved PR is a normal move. Do it when I ask.
@@ -313,7 +382,7 @@ overrides the writing standards above for those comments only.
 
 - All lowercase, including the first word. Keep code identifiers in backticks with
   their real case.
-- One to three casual sentences. No headers and no bold.
+- One short sentence, two at most (about 15-25 words). One point per comment. No headers and no bold.
 - Lead with a question that proposes the simpler path: "can we just…", "could
   we…", "do we need…", "what does X get us that Y doesn't?".
 - Name the existing thing to reuse, and why, in one clause.
