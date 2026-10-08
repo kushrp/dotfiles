@@ -173,6 +173,9 @@ Writing quality falls sharply as context fills. Hold a hard ceiling.
   error handling, reuse, naming, transactions, and scope discipline.
 - Run the `review-by-georg` skill on every ask-rogo PR before you push it, and
   list it in the PR's Test Evidence. Georg asks for it on every PR he reviews.
+- Load the `unit-tests` skill before you write, change, or review a test. Write
+  fewer tests: a flaky test costs more than a missing one. Run every new or
+  changed spec 50 times under CPU load with its `stress-spec.sh` before you push.
 - Keep the `rogo-review-rulebook` current from authoritative online sources, not
   from memory. It is the canonical rulebook that every review lens loads.
 
