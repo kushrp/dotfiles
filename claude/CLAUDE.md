@@ -409,6 +409,10 @@ overrides the writing standards above for those comments only.
   `codex exec "<prompt>" < /dev/null`, then `codex exec resume <session-id>` for
   a follow-up turn. Do not use a Codex MCP server. It is off in Claude and Codex,
   because every session started its own copy.
+- Subagents run on Sonnet by default (`CLAUDE_CODE_SUBAGENT_MODEL`). Send
+  searches, file reads, log scans, and mechanical edits to `haiku-worker`, or
+  pass `model: "haiku"` and `effort: "medium"`. Pass `effort: "high"` for a
+  harder bounded task. Keep design, review, and writing on the main model.
 
 ## Shell environment
 
