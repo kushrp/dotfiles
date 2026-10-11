@@ -409,10 +409,15 @@ overrides the writing standards above for those comments only.
   `codex exec "<prompt>" < /dev/null`, then `codex exec resume <session-id>` for
   a follow-up turn. Do not use a Codex MCP server. It is off in Claude and Codex,
   because every session started its own copy.
-- Subagents run on Sonnet by default (`CLAUDE_CODE_SUBAGENT_MODEL`). Send
+- Subagents use Sonnet 5.5 and Haiku 5.5 only, never Haiku 4.5 or Sonnet 5.
+  `settings.json` pins the `sonnet` and `haiku` aliases to those versions.
+- Subagents run on Sonnet 5.5 by default (`CLAUDE_CODE_SUBAGENT_MODEL`). Send
   searches, file reads, log scans, and mechanical edits to `haiku-worker`, or
   pass `model: "haiku"` and `effort: "medium"`. Pass `effort: "high"` for a
   harder bounded task. Keep design, review, and writing on the main model.
+- Use `opus-worker` (Opus 5.5) only for important, complex subagent tasks:
+  multi-file debugging, architecture analysis, or high-risk changes. Never use
+  it for searches, reads, or bounded edits.
 
 ## Shell environment
 
