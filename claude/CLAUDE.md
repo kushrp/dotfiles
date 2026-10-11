@@ -418,6 +418,8 @@ overrides the writing standards above for those comments only.
 - Use `opus-worker` (Opus 5.5) only for important, complex subagent tasks:
   multi-file debugging, architecture analysis, or high-risk changes. Never use
   it for searches, reads, or bounded edits.
+- Use `fable-worker` (Fable 5.1) only for very complex work that Opus 5.5
+  cannot handle. Fable 5.1 is also the advisor model (`advisorModel`).
 
 ## Shell environment
 
