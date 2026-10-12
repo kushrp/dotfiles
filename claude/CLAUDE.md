@@ -409,6 +409,15 @@ overrides the writing standards above for those comments only.
   `codex exec "<prompt>" < /dev/null`, then `codex exec resume <session-id>` for
   a follow-up turn. Do not use a Codex MCP server. It is off in Claude and Codex,
   because every session started its own copy.
+- Delegate to subagents wherever possible. Send every search, file read, log
+  scan, research task, and independent edit to a subagent, and run independent
+  subagents in parallel in one message. Keep the main session for decisions,
+  synthesis, and replies to me. Do the work yourself only when it is one quick
+  lookup or the next step needs the result right away.
+- Run subagents in the background by default. Never block the session on
+  one: keep working and keep answering me while it runs. Set
+  `run_in_background: false` only when nothing else can happen until it
+  returns.
 - Subagents use Sonnet 5.5 and Haiku 5.5 only, never Haiku 4.5 or Sonnet 5.
   `settings.json` pins the `sonnet` and `haiku` aliases to those versions.
 - Subagents run on Sonnet 5.5 by default (`CLAUDE_CODE_SUBAGENT_MODEL`). Send
