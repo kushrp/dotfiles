@@ -58,11 +58,8 @@
       ]
     },
     "brain-vault": {
-      "transport": "stdio",
-      "command": "python3",
-      "args": [
-        "~/Documents/second-brain/brain-mcp-recall.py"
-      ],
+      "transport": "http",
+      "url": "http://127.0.0.1:47823/mcp",
       "requires_paths": [
         "~/Documents/second-brain/brain-mcp-recall.py",
         "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Kush's Vault/Kush's vault"
