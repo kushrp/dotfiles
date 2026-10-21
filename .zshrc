@@ -522,3 +522,5 @@ export PATH="$HOME/.grok/bin:$PATH"
 
 # OpenClaw Completion
 [ -f '/Users/kushrustagi/.openclaw/completions/openclaw.zsh' ] && source '/Users/kushrustagi/.openclaw/completions/openclaw.zsh'
+
+. "$HOME/.local/bin/env"
