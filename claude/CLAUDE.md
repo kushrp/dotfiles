@@ -383,17 +383,26 @@ existed. It degraded five Argo CD apps across the acme, dev, and staging cells.
 Draft every comment I will send, or that you post as me, in my voice. This
 overrides the writing standards above for those comments only.
 
-- All lowercase, including the first word. Keep code identifiers in backticks with
-  their real case.
-- One short sentence, two at most (about 15-25 words). One point per comment. No headers and no bold.
-- Lead with a question that proposes the simpler path: "can we just…", "could
-  we…", "do we need…", "what does X get us that Y doesn't?".
+- All lowercase, including the first word. Write names plainly, with no
+  backticks. Use backticks only when the name would misread without them.
+- One or two short sentences. One point per comment. No headers and no bold.
+- Plain, everyday words, as one teammate talks to another. Say what goes wrong
+  ("one company's connector would slip by"), not reviewer jargon.
+- Vary the opener across a batch: "maybe we could…", "what if we…", "wonder if
+  we could just…", "i think…", "small thing:", "nit:". Not every comment is a
+  "can we".
 - Name the existing thing to reuse, and why, in one clause.
 - Light hedges and dropped apostrophes are fine: "kinda", "feels like", "i think",
   "dont".
-- Example: "can we just publish an application event here instead of adding a new
-  producer service? 58606 already knows the exact moment the transcript is
-  searchable, so that seems like the natural spot"
+- Examples:
+  - "i think orgs that got deleted drop out of the daily table completely, even
+    though the history snapshot still has them. maybe we could build the org list
+    from the history keys too?"
+  - "wonder if we could just extend agent_tool_call_uncatalogued_connectors for
+    this instead of a new test. right now it only catches a connector once 3+
+    people use it, so one company's connector would slip by"
+  - "small thing: sync_permission_defaults.py has steps in RUNBOOK.md. would be
+    nice to add the same for this one so the next person knows how to run it"
 
 ## Skills
 
