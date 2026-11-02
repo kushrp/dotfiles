@@ -3,7 +3,11 @@
   "servers": {
     "notion": {
       "transport": "http",
-      "url": "https://mcp.notion.com/mcp"
+      "url": "https://mcp.notion.com/mcp",
+      "clients": [
+        "codex",
+        "grok"
+      ]
     },
     "linear": {
       "transport": "http",
