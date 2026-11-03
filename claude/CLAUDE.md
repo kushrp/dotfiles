@@ -323,8 +323,10 @@ me to ask. Follow Kun Chen's repair loop (the `no-mistakes` CI repair stage):
 2. Reproduce each finding or CI failure before you repair it. Fix clear
    in-scope bugs in the PR that introduced the code, validate, re-gate, and
    push through Graphite. A repair must build on the head already reviewed.
-3. Reply to bot comments and resolve them yourself. For human comments, fix
-   the code when the fix is clear and draft the reply for me.
+3. Fix every bot comment (Indent, Bugbot, Cursor, Datadog) on every PR in
+   every repo without being asked, then reply and resolve the thread
+   yourself. Read Indent's summary comment too. For human comments, fix the
+   code when the fix is clear and draft the reply for me.
 4. Send ambiguous product or architecture decisions to me with the concrete
    tradeoff. Use a Lavish review page (`lavish-axi`) when the decision needs
    visuals.
