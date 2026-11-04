@@ -248,16 +248,14 @@ Okta page there timed out on every reload.
 
 - Never commit on `main`. Each piece of work gets its own branch, ideally its own
   git worktree, rather than a branch switch in place.
-- Land through Graphite in repos that use it, such as ask-rogo. Use `gt create`
-  and `gt submit`, never a raw `git merge` or `git push` to main.
-- Run all stack manipulation through the Graphite CLI: `gt create`, `gt modify`,
-  `gt restack`, and `gt track` to adopt a commit. Never a raw `git rebase`.
+- Graphite is retired as of 2026-11-04. Push with `git push` and open PRs with
+  `gh pr create`. Never push to main directly.
+- Build a stack with GitHub bases: open each PR with `--base <parent branch>`.
+  After a parent merges, retarget the child with `gh pr edit <n> --base main`.
+- Repair a reviewed branch with new commits and a fast-forward push. Never
+  rebase or force push a branch that has a review.
 - Keep changes scoped to the current worktree. I run several sessions at once, as
   split panes in one tmux window, and `ccd` or `prefix a` lists them all.
-- Never run `gt sync` without `--no-restack`: by default it restacks every
-  session's branches. To retarget one stack after its base merges, run
-  `gt move --onto main` on its lowest open branch, then `gt submit --stack`. A
-  PreToolUse hook enforces this.
 
 ### Stack shape
 
@@ -290,13 +288,12 @@ Add a glossary or review map when useful. Follow required repository sections
 and ordering.
 
 Every PR gets a real description. Never leave it as the bare commit subject or
-empty. `gt submit --no-edit` seeds it from the commit body, which is a starting
+empty. `gh pr create --fill` seeds it from the commit body, which is a starting
 point and not the finished description. Cover four things on create: what changed
 and why, this layer's role in the stack, the testing you actually did, and the
 caveats or deferred follow-ups a reviewer needs. Refresh it whenever the diff
 changes materially, through new commits, a scope change, or review fixes, so it
-always matches the current state. Use `gh pr edit <n> --body` or `gt submit
---edit`.
+always matches the current state. Use `gh pr edit <n> --body-file <file>`.
 
 Writing and updating a PR's own description is authorized and expected. It is not
 the same as replying to human reviewers.
@@ -322,7 +319,7 @@ me to ask. Follow Kun Chen's repair loop (the `no-mistakes` CI repair stage):
    most every 15 minutes, because the kush-rogo rate limit is shared.
 2. Reproduce each finding or CI failure before you repair it. Fix clear
    in-scope bugs in the PR that introduced the code, validate, re-gate, and
-   push through Graphite. A repair must build on the head already reviewed.
+   push fast-forward. A repair must build on the head already reviewed.
 3. Fix every bot comment (Indent, Bugbot, Cursor, Datadog) on every PR in
    every repo without being asked, then reply and resolve the thread
    yourself. Read Indent's summary comment too. For human comments, fix the
@@ -367,16 +364,16 @@ existed. It degraded five Argo CD apps across the acme, dev, and staging cells.
 
 ### PR links
 
-- Link every PR with Graphite only:
-  `https://app.graphite.com/github/pr/Rogo-Technologies/ask-rogo/<n>`. Never use a
-  GitHub PR URL, and never leave a bare `#<n>` unlinked.
+- Link every PR with its GitHub URL:
+  `https://github.com/Rogo-Technologies/<repo>/pull/<n>`. Never use a Graphite
+  link, and never leave a bare `#<n>` unlinked.
 - Show related PRs as one stack, base to tip: `main → #A → #B`.
-- If a change has no Graphite PR, such as a direct commit, say so. Do not give a
-  GitHub link in its place.
+- Write the repo in every link. A bare number in another repo auto-links to an
+  unrelated ask-rogo PR.
 
 ### Never reply to humans
 
-- Never post, comment, reply, or resolve on anything human-facing: PRs, Graphite,
+- Never post, comment, reply, or resolve on anything human-facing: PRs, Linear,
   Notion, or Slack. Draft the text and I will send it.
 - Bot comments, such as Bugbot, are yours to handle directly.
 
