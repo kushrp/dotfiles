@@ -373,8 +373,8 @@ existed. It degraded five Argo CD apps across the acme, dev, and staging cells.
 
 ### Never reply to humans
 
-- Never post, comment, reply, or resolve on anything human-facing: PRs, Linear,
-  Notion, or Slack. Draft the text and I will send it.
+- Never post, comment, reply, or resolve on anything human-facing: PRs, Notion,
+  or Slack. Draft the text and I will send it.
 - Bot comments, such as Bugbot, are yours to handle directly.
 
 ### Review comments in Kush's voice
