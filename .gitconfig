@@ -214,8 +214,8 @@
 [url "git@github.com:"]
 
 	insteadOf = "gh:"
-	pushInsteadOf = "github:"
-	pushInsteadOf = "https://github.com/"
+	pushinsteadof = github:
+	pushinsteadof = https://github.com/
 
 [url "https://github.com/"]
 
